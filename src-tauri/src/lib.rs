@@ -256,7 +256,10 @@ fn spawn_auto_update_loop<R: Runtime>(app: AppHandle<R>) {
 const LOGO_DATA_URI: &str = concat!("data:image/png;base64,", include_str!("logo-1024.png.b64"));
 
 fn bootstrap_script() -> String {
-    BOOTSTRAP_TEMPLATE.replace("__LDC_LOGO_DATA_URI__", LOGO_DATA_URI)
+    // .trim(): b64 dosyası sonda satır sonu (\r\n) ile üretilmişse, bu ham satır
+    // sonu tek tırnaklı JS string literalini bozup enjekte edilen TÜM bootstrap
+    // script'ini SyntaxError ile çökertir (yüzen dişli/rozet dahil kaybolur).
+    BOOTSTRAP_TEMPLATE.replace("__LDC_LOGO_DATA_URI__", LOGO_DATA_URI.trim())
 }
 
 const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
@@ -850,7 +853,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.7'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.8'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);

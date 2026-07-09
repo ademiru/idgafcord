@@ -35,8 +35,12 @@ Hafif, sade ve gizlilik odaklı Discord masaustu istemcisi.
 - Donanim hizlandirmayi kapatarak kaynak kullanimini azaltabilir.
 - Oyun modunda tepsideyken Discord'u askida tutabilir.
 - Ekran paylasimi icin performans modu sunar.
+- Normal, tasarruf, yayin ve oyun performans profilleri sunar.
+- idgaf temasiyla kirmizi-siyah gorunum verir.
 - Mikrofonu kendi sectigin global kisayolla hizli susturabilir.
 - Ses komutuyla mikrofonu kapatip acabilir.
+- Mikrofon durum rozeti ve ozel ses komutlari sunar.
+- Portable surum ayarlarini kendi klasorunde saklayabilir.
 
 ## Ayarlar
 

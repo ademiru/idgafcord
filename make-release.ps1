@@ -40,10 +40,12 @@ Write-Host ">> Portable zip hazirlaniyor..."
 Remove-Item $portableDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force "$portableDir/idgafcord" | Out-Null
 Copy-Item $releaseExe "$portableDir/idgafcord/idgafcord.exe" -Force
+New-Item -ItemType File -Force "$portableDir/idgafcord/portable.flag" | Out-Null
 @"
 idgafcord $ver portable
 
 Kurulum gerektirmez. idgafcord.exe dosyasini calistir.
+Ayarlari bu klasorun icindeki data klasorunde saklar.
 Otomatik guncelleme icin imzali setup surumunu kullan.
 "@ | Set-Content "$portableDir/idgafcord/README.txt" -Encoding UTF8
 

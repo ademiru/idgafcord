@@ -10,6 +10,7 @@
 // (localStorage) çalışır; işletim sistemi ayarları (tepsi/autostart/GPU) ise
 // native tepsi menüsündedir.
 
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -112,6 +113,13 @@ fn ensure_loaded<R: Runtime>(app: &AppHandle<R>) {
 }
 
 fn config_dir<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            if dir.join("portable.flag").exists() {
+                return Some(dir.join("data"));
+            }
+        }
+    }
     app.path().app_config_dir().ok()
 }
 
@@ -166,12 +174,59 @@ fn register_mute_shortcut<R: Runtime>(app: &AppHandle<R>, shortcut: &str) -> boo
     app.global_shortcut().register(shortcut).is_ok()
 }
 
-fn spawn_update_check<R: Runtime>(app: AppHandle<R>) {
+fn panel_notice<R: Runtime>(app: &AppHandle<R>, msg: &str, warn: bool) {
+    if let Some(window) = app.get_webview_window("main") {
+        let msg = serde_json::json!(msg);
+        let warn = if warn { "true" } else { "false" };
+        let _ = window.eval(&format!(
+            "window.__LDC_nativeNotice&&window.__LDC_nativeNotice({msg},{warn});"
+        ));
+    }
+}
+
+fn update_status<R: Runtime>(app: &AppHandle<R>, msg: &str, warn: bool) {
+    if let Some(window) = app.get_webview_window("main") {
+        let msg = serde_json::json!(msg);
+        let warn = if warn { "true" } else { "false" };
+        let _ = window.eval(&format!(
+            "window.__LDC_updateStatus&&window.__LDC_updateStatus({msg},{warn});"
+        ));
+    }
+    panel_notice(app, msg, warn);
+}
+
+fn spawn_update_check<R: Runtime>(app: AppHandle<R>, quiet: bool) {
     tauri::async_runtime::spawn(async move {
-        if let Ok(updater) = app.updater() {
-            if let Ok(Some(update)) = updater.check().await {
-                let _ = update.download_and_install(|_, _| {}, || {}).await;
-                app.restart();
+        if !quiet {
+            update_status(&app, "Güncelleme kontrol ediliyor...", false);
+        }
+        match app.updater() {
+            Ok(updater) => match updater.check().await {
+                Ok(Some(update)) => {
+                    update_status(&app, "Yeni sürüm bulundu, indiriliyor...", false);
+                    match update.download_and_install(|_, _| {}, || {}).await {
+                        Ok(_) => {
+                            update_status(&app, "Güncelleme kuruldu, yeniden başlatılıyor...", false);
+                            app.restart();
+                        }
+                        Err(_) => update_status(&app, "Güncelleme indirilemedi.", true),
+                    }
+                }
+                Ok(None) => {
+                    if !quiet {
+                        update_status(&app, "En güncel sürüm kullanılıyor.", false);
+                    }
+                }
+                Err(_) => {
+                    if !quiet {
+                        update_status(&app, "Güncelleme kontrolü başarısız.", true);
+                    }
+                }
+            }
+            Err(_) => {
+                if !quiet {
+                    update_status(&app, "Güncelleme sistemi başlatılamadı.", true);
+                }
             }
         }
     });
@@ -185,7 +240,7 @@ fn spawn_auto_update_loop<R: Runtime>(app: AppHandle<R>) {
             .and_then(|s| s.lock().ok().map(|s| s.auto_update_check))
             .unwrap_or(false);
         if enabled {
-            spawn_update_check(app.clone());
+            spawn_update_check(app.clone(), true);
         }
     });
 }
@@ -221,7 +276,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     {re:/\/api\/v\d+\/reporting/,c:'REPORTING'},{re:/segment\.(io|com)/i,c:'SEGMENT'},
     {re:/google-analytics/i,c:'GA'},{re:/doubleclick/i,c:'ADS'},{re:/\/experiments\b/,c:'EXPERIMENTS'}
   ];
-  function pushLog(cat,u){blockedCount++;catCount[cat]=(catCount[cat]||0)+1;blockedLog.push({t:Date.now(),c:cat,u:String(u).replace(/^https?:\/\//,'').split('?')[0].slice(0,90)});if(blockedLog.length>500)blockedLog.shift();}
+  function pushLog(cat,u){blockedCount++;catCount[cat]=(catCount[cat]||0)+1;var d=new Date().toISOString().slice(0,10);if(get('blockedDay','')!==d){set('blockedDay',d);set('blockedToday','0');}set('blockedToday',String((parseInt(get('blockedToday','0'),10)||0)+1));blockedLog.push({t:Date.now(),c:cat,u:String(u).replace(/^https?:\/\//,'').split('?')[0].slice(0,90)});if(blockedLog.length>500)blockedLog.shift();}
   function blocked(u){if(!ison('block','1')||!u)return false;try{u=String(u);}catch(e){return false;}for(var i=0;i<PAT.length;i++){if(PAT[i].re.test(u)){pushLog(PAT[i].c,u);return true;}}return false;}
   var of=window.fetch;window.fetch=function(input,init){var u=typeof input==='string'?input:(input&&input.url)||'';if(blocked(u))return Promise.resolve(new Response('',{status:204}));return of.apply(this,arguments);};
   var oo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__ldc=u;return oo.apply(this,arguments);};
@@ -266,7 +321,12 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     solarized:buildTheme(['#00212b','#002b36','#073642','#0d475a','#0f5265','#14607a'],'#268bd2'),
     rosepine:buildTheme(['#16141f','#191724','#1f1d2e','#26233a','#2a2740','#393552'],'#ebbcba'),
     synthwave:buildTheme(['#0d0221','#190833','#1f0a3d','#2a1052','#331466','#3d1a7a'],'#ff2e97'),
-    monokai:buildTheme(['#1e1f1c','#272822','#2d2e28','#33342d','#3a3b33','#414339'],'#f92672')
+    monokai:buildTheme(['#1e1f1c','#272822','#2d2e28','#33342d','#3a3b33','#414339'],'#f92672'),
+    idgaf:buildTheme(['#070000','#120000','#1c0303','#260505','#340707','#430909'],'#d80f12',
+      BASE_SEL+'{--red-400:#ff3b3f !important;--red-500:#d80f12 !important;--status-danger:#ff3b3f !important;}'+
+      '[class*="sidebar_"],[class*="guilds_"]{background:linear-gradient(180deg,#080000,#170000 55%,#050000) !important;}'+
+      '[class*="chat_"]{background:radial-gradient(circle at top right,rgba(216,15,18,.18),transparent 34%),var(--background-primary) !important;}'+
+      '[class*="selected_"],[class*="modeSelected_"]{background:rgba(216,15,18,.18) !important;}')
   };
   var STARS_ANIM='@keyframes ldcdrift{from{background-position:0 0}to{background-position:0 -600px}}[class*="guilds_"]{'+STAR_BG+'animation:ldcdrift 120s linear infinite !important;}';
   function uiCSS(){
@@ -372,6 +432,22 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   document.addEventListener('DOMContentLoaded',applyAll);
   splash();document.addEventListener('DOMContentLoaded',splash);
 
+  function showLoadIssue(){
+    if(document.getElementById('ldc-load-issue'))return;
+    var host=document.body||document.documentElement;if(!host)return;
+    var box=mk('div',{position:'fixed',left:'50%',top:'76px',transform:'translateX(-50%)',zIndex:'2147482998',width:'min(440px,calc(100vw - 32px))',background:'rgba(30,31,34,.96)',border:'1px solid rgba(216,15,18,.45)',borderRadius:'8px',padding:'14px',boxShadow:'0 14px 38px rgba(0,0,0,.42)',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",color:'#f2f3f5'});
+    box.id='ldc-load-issue';
+    box.appendChild(mk('div',{fontSize:'15px',fontWeight:'800'},'Discord yüklenemedi'));
+    box.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',lineHeight:'1.45',marginTop:'4px'},'İnternet, Discord oturumu veya WebView geçici sorun yaşamış olabilir.'));
+    var row=mk('div',{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'12px'});
+    var r=mkBtn('Yenile',true),c=mkBtn('Kapat',false);
+    r.onclick=function(){location.href='https://discord.com/app';};c.onclick=function(){if(box.parentNode)box.parentNode.removeChild(box);};
+    row.appendChild(c);row.appendChild(r);box.appendChild(row);host.appendChild(box);
+  }
+  window.addEventListener('offline',showLoadIssue);
+  window.addEventListener('online',function(){var e=document.getElementById('ldc-load-issue');if(e&&e.parentNode)e.parentNode.removeChild(e);});
+  setTimeout(function(){var ok=document.querySelector('[class*="app_"],[class*="layers_"],[data-list-id="guildsnav"]');if(!ok&&location.hostname.indexOf('discord.com')>=0)showLoadIssue();},14000);
+
   function textOf(el){return ((el&&((el.getAttribute('aria-label')||'')+' '+(el.getAttribute('title')||'')+' '+(el.textContent||'')))||'').toLowerCase();}
   function visible(el){var r=el.getBoundingClientRect();return r.width>8&&r.height>8&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;}
   function micButton(){
@@ -404,6 +480,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(!desired||desired==='toggle'||action==='toggle'||desired===action){
       btn.click();
     }
+    setTimeout(updateMicBadge,120);
     return true;
   }
   window.__LDC_toggleMute=function(){var ok=setMic('toggle');if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return ok;};
@@ -411,12 +488,31 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
 
   var voiceRec=null,voiceActive=false,voiceRestartTimer=null;
   function normVoice(s){return String(s||'').toLowerCase().replace(/[ıİ]/g,'i').replace(/[ğĞ]/g,'g').replace(/[üÜ]/g,'u').replace(/[şŞ]/g,'s').replace(/[öÖ]/g,'o').replace(/[çÇ]/g,'c');}
+  function phraseMatch(text,key,def){var p=normVoice(get(key,def));return p&&text.indexOf(p)>=0;}
   function handleVoice(s){
     var t=normVoice(s);
+    if(phraseMatch(t,'voiceUnmutePhrase','mikrofonu aç')){setMic('unmute');say('Ses komutu: mikrofon açıldı.');return true;}
+    if(phraseMatch(t,'voiceMutePhrase','mikrofonu kapat')){setMic('mute');say('Ses komutu: mikrofon kapatıldı.');return true;}
     if(/(mikrofon|ses|unmute).*(ac|aç)|sesle ac|unmute\b/.test(t)){setMic('unmute');say('Ses komutu: mikrofon açıldı.');return true;}
     if(/(mikrofon|ses|mute).*(kapat|sustur|sessiz)|sesle kapa|(^|\s)mute\b/.test(t)){setMic('mute');say('Ses komutu: mikrofon kapatıldı.');return true;}
     if(/(mikrofon|mute).*(degistir|toggle)/.test(t)){setMic('toggle');say('Ses komutu: mikrofon değiştirildi.');return true;}
     return false;
+  }
+
+  function micState(){
+    var btn=micButton();if(!btn)return 'unknown';
+    var a=micAction(btn);return a==='unmute'?'muted':(a==='mute'?'live':'unknown');
+  }
+  function updateMicBadge(){
+    if(!micBadge||!ison('micBadge','1'))return;
+    var s=micState(),on=s==='live';
+    micBadge.textContent=s==='unknown'?'Mikrofon ?':(on?'Mikrofon açık':'Mikrofon kapalı');
+    micBadge.style.background=on?'rgba(35,165,90,.92)':'rgba(216,15,18,.92)';
+  }
+  function ensureMicBadge(){
+    if(!ison('micBadge','1')){if(micBadge)micBadge.style.display='none';return;}
+    if(!micBadge){micBadge=mk('div',{position:'fixed',left:'16px',bottom:'18px',zIndex:'2147482999',padding:'7px 11px',borderRadius:'18px',fontSize:'12px',fontWeight:'700',color:'#fff',boxShadow:'0 8px 26px rgba(0,0,0,.35)',pointerEvents:'none'});(document.body||document.documentElement).appendChild(micBadge);}
+    micBadge.style.display='block';updateMicBadge();
   }
   function stopVoice(){
     voiceActive=false;
@@ -443,13 +539,14 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     {k:'block',def:'1',t:'Telemetriyi engelle',d:'Analiz/izleme isteklerini (science, metrics, sentry…) engeller.'},
     {k:'upsell',def:'0',t:'Nitro & reklamları gizle',d:'Yükseltme/hediye (upsell) öğelerini arayüzden gizler.'}
   ];
-  var THEME_OPTS=[{v:'off',l:'Kapalı'},{v:'midnight',l:'Midnight'},{v:'space',l:'Uzay'},{v:'dracula',l:'Dracula'},{v:'nord',l:'Nord'},{v:'catppuccin',l:'Catppuccin'},{v:'amoled',l:'AMOLED'},{v:'tokyonight',l:'Tokyo Night'},{v:'gruvbox',l:'Gruvbox'},{v:'solarized',l:'Solarized'},{v:'rosepine',l:'Rosé Pine'},{v:'synthwave',l:'Synthwave'},{v:'monokai',l:'Monokai'}];
+  var THEME_OPTS=[{v:'off',l:'Kapalı'},{v:'idgaf',l:'idgaf'},{v:'midnight',l:'Midnight'},{v:'space',l:'Uzay'},{v:'dracula',l:'Dracula'},{v:'nord',l:'Nord'},{v:'catppuccin',l:'Catppuccin'},{v:'amoled',l:'AMOLED'},{v:'tokyonight',l:'Tokyo Night'},{v:'gruvbox',l:'Gruvbox'},{v:'solarized',l:'Solarized'},{v:'rosepine',l:'Rosé Pine'},{v:'synthwave',l:'Synthwave'},{v:'monokai',l:'Monokai'}];
+  var PROFILE_OPTS=[{v:'normal',l:'Normal'},{v:'save',l:'Tasarruf'},{v:'stream',l:'Yayın'},{v:'game',l:'Oyun'}];
   var RADIUS_OPTS=[{v:'normal',l:'Normal'},{v:'soft',l:'Yumuşak'},{v:'sharp',l:'Köşeli'}];
   var C={bg:'#313338',fg:'#dbdee1',hl:'#f2f3f5',mut:'#949ba4',acc:'#5865F2',accH:'#4752c4',grn:'#23a55a',line:'#232428',line2:'#3a3c41',field:'#1e1f22',btn:'#4e5058',btnH:'#6d6f78',warn:'#f0b232',red:'#f23f42'};
   function st(el,o){for(var k in o){el.style[k]=o[k];}return el;}
   function mk(tag,o,txt){var e=document.createElement(tag);if(o)st(e,o);if(txt!=null)e.textContent=txt;return e;}
   function hover(el,a,b){el.addEventListener('mouseenter',function(){el.style.background=b;});el.addEventListener('mouseleave',function(){el.style.background=a;});}
-  var statusEl,themeEl,modal,footEl,switches={},nativeSwitches={},themePills,accentInp,fontRange,fontVal,bgInp,termEl,termSumEl,termTimer=null,radiusPills,logoInp,fontInp,muteShortcutText;
+  var statusEl,themeEl,modal,footEl,switches={},nativeSwitches={},themePills,profilePills,accentInp,fontRange,fontVal,bgInp,termEl,termSumEl,termTimer=null,radiusPills,logoInp,fontInp,muteShortcutText,updateStatusEl,voiceMuteInp,voiceUnmuteInp,tabButtons={},activeTab='system',micBadge=null;
   var nativeState={minimize_to_tray:true,start_minimized:false,autostart:false,disable_gpu:false,stream_performance:false,game_mode:false,auto_update_check:true,mute_shortcut:'CommandOrControl+Shift+M'};
   function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':'&gt;';});}
   function fmtTime(t){var d=new Date(t),p=function(n){return(n<10?'0':'')+n;};return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
@@ -461,7 +558,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     var arr=blockedLog.slice(-140);
     for(var i=0;i<arr.length;i++){var e=arr[i];out+='<div class="ldc-tl"><span class="ldc-tt">'+fmtTime(e.t)+'</span>  <span class="k-'+e.c+'">'+e.c+'</span>  <span class="ldc-tu">'+esc(shortUrl(e.u))+'</span></div>';}
     termEl.innerHTML=out;termEl.scrollTop=termEl.scrollHeight;
-    if(termSumEl){var parts=[];for(var k in catCount)parts.push('<span class="k-'+k+'">'+k+'</span> '+catCount[k]);termSumEl.innerHTML='<b>'+blockedCount+'</b> istek engellendi'+(parts.length?'<br>'+parts.sort().join('&nbsp;&nbsp; '):'');}
+    if(termSumEl){var parts=[];for(var k in catCount)parts.push('<span class="k-'+k+'">'+k+'</span> '+catCount[k]);termSumEl.innerHTML='<b>'+blockedCount+'</b> istek engellendi · bugün <b>'+get('blockedToday','0')+'</b>'+(parts.length?'<br>'+parts.sort().join('&nbsp;&nbsp; '):'');}
   }
   function mkPills(opts,cur,cb){
     var wrap=mk('div',{display:'flex',flexWrap:'wrap',gap:'6px',marginTop:'2px'});var btns={};
@@ -479,8 +576,29 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     row.appendChild(txt);row.appendChild(ctrl);return row;
   }
   function say(m,c){if(statusEl){statusEl.textContent=m||'';statusEl.style.color=c||C.grn;}}
-  function sec(t){return mk('div',{fontSize:'11px',textTransform:'uppercase',letterSpacing:'.6px',color:C.mut,fontWeight:'700',margin:'18px 0 4px'},t);}
+  function sec(t){var e=mk('div',{fontSize:'11px',textTransform:'uppercase',letterSpacing:'.6px',color:C.mut,fontWeight:'700',margin:'18px 0 4px'},t);e._sec=t;return e;}
   function mkBtn(l,p){var b=mk('button',{background:p?C.acc:C.btn,color:'#fff',border:'none',borderRadius:'6px',padding:'9px 15px',fontSize:'13px',cursor:'pointer',fontWeight:'500',fontFamily:'inherit',whiteSpace:'nowrap',flex:'0 0 auto'},l);hover(b,p?C.acc:C.btn,p?C.accH:C.btnH);return b;}
+  function profileFromNative(){if(nativeState.game_mode)return 'game';if(nativeState.stream_performance)return 'stream';if(nativeState.disable_gpu)return 'save';return 'normal';}
+  function mkTabs(body){
+    var opts=[{v:'system',l:'Sistem'},{v:'voice',l:'Ses'},{v:'privacy',l:'Gizlilik'},{v:'theme',l:'Tema'},{v:'look',l:'Görünüm'},{v:'advanced',l:'Gelişmiş'}];
+    var bar=mk('div',{display:'flex',gap:'6px',padding:'10px 20px',borderBottom:'1px solid '+C.line,overflowX:'auto'});
+    opts.forEach(function(o){var b=mk('button',{background:C.field,color:C.mut,border:'none',borderRadius:'7px',padding:'8px 11px',fontSize:'12px',fontWeight:'650',cursor:'pointer',whiteSpace:'nowrap'},o.l);b.onclick=function(){activeTab=o.v;applyTabs(body);};tabButtons[o.v]=b;bar.appendChild(b);});
+    return bar;
+  }
+  function tabForSection(t){
+    if(/Sistem|Güncelleme/.test(t))return 'system';
+    if(/Ses|Mikrofon/.test(t))return 'voice';
+    if(/Engellenen|Gizlilik|Genel/.test(t))return 'privacy';
+    if(/Özel tema/.test(t))return 'advanced';
+    if(/Tema|Aksan/.test(t))return 'theme';
+    if(/Görünüm|Yapı|Yıldız|Arka/.test(t))return 'look';
+    return activeTab;
+  }
+  function applyTabs(body){
+    var cur='system',kids=Array.prototype.slice.call(body.children);
+    kids.forEach(function(ch){if(ch._sec)cur=tabForSection(ch._sec);ch._tab=cur;ch.style.display=(cur===activeTab)?'':'none';});
+    for(var k in tabButtons){var on=k===activeTab;tabButtons[k].style.background=on?C.acc:C.field;tabButtons[k].style.color=on?'#fff':C.mut;}
+  }
   // Bilgisayardan görsel seç → data: URL (CSP'ye takılmaz, localStorage'da saklanır).
   function pickFile(maxLen,cb){var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.style.display='none';inp.onchange=function(){var f=inp.files&&inp.files[0];if(!f)return;var r=new FileReader();r.onload=function(){var d=r.result;if(String(d).length>maxLen){cb(null);return;}cb(d);};r.readAsDataURL(f);};(document.body||document.documentElement).appendChild(inp);inp.click();setTimeout(function(){if(inp.parentNode)inp.parentNode.removeChild(inp);},1500);}
   function mkSwitch(on,cb){
@@ -541,12 +659,15 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   window.__LDC_setNativeSettings=function(s){
     nativeState=s||nativeState;
     for(var k in nativeSwitches){if(k in nativeState)nativeSwitches[k].set(!!nativeState[k]);}
+    if(profilePills)profilePills.set(profileFromNative());
     updateShortcutText();
   };
   window.__LDC_nativeNotice=function(msg,warn){say(msg,warn?C.warn:C.grn);};
+  window.__LDC_updateStatus=function(msg,warn){if(updateStatusEl){updateStatusEl.textContent=msg||'';updateStatusEl.style.color=warn?C.warn:C.grn;}say(msg,warn?C.warn:C.grn);};
 
   function build(){try{
     if(document.getElementById('ldc-root')||!document.body)return;
+    if(get('firstRunDone','0')!=='1')activeTab='privacy';
     var root=mk('div',{});root.id='ldc-root';
     // Ergonomik launcher: koyu cam kapsül = [ sürükleme tutamağı | dişli ].
     var gear=mk('div',{position:'fixed',right:'16px',bottom:'96px',display:'flex',alignItems:'center',gap:'1px',padding:'4px',background:'rgba(30,31,34,.94)',border:'1px solid rgba(255,255,255,.09)',borderRadius:'26px',boxShadow:'0 6px 22px rgba(0,0,0,.5)',zIndex:'2147483000',backdropFilter:'blur(10px)'});
@@ -571,15 +692,27 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
 
     modal=mk('div',{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',display:'none',alignItems:'center',justifyContent:'center',zIndex:'2147483001',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif"});
     modal.id='ldc-modal';modal.addEventListener('click',function(e){if(e.target===modal)closePanel();});
-    var card=mk('div',{width:'560px',maxWidth:'calc(100vw - 32px)',maxHeight:'calc(100vh - 64px)',background:C.bg,color:C.fg,borderRadius:'14px',boxShadow:'0 12px 40px rgba(0,0,0,.55)',display:'flex',flexDirection:'column',overflow:'hidden'});
+    var card=mk('div',{width:'720px',maxWidth:'calc(100vw - 32px)',maxHeight:'calc(100vh - 64px)',background:C.bg,color:C.fg,borderRadius:'14px',boxShadow:'0 12px 40px rgba(0,0,0,.55)',display:'flex',flexDirection:'column',overflow:'hidden'});
 
     var head=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'18px 20px',borderBottom:'1px solid '+C.line});
     var ht=mk('div',{});ht.appendChild(mk('div',{fontSize:'17px',fontWeight:'700',color:C.hl},'Lightweight Discord'));ht.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginTop:'2px'},'Görünüm, Sistem & Gizlilik'));
     var x=mk('div',{cursor:'pointer',color:'#b5bac1',fontSize:'24px',lineHeight:'1',padding:'2px 8px',borderRadius:'6px'},'×');hover(x,'transparent','#3f4147');x.onclick=closePanel;
     head.appendChild(ht);head.appendChild(x);
 
-    var body=mk('div',{padding:'4px 20px 18px',overflowY:'auto'});
+    var body=mk('div',{padding:'4px 20px 18px',overflowY:'auto'});body.id='ldc-modal-body';
+    var tabs=mkTabs(body);
     body.appendChild(sec('Genel & Gizlilik'));
+    if(get('firstRunDone','0')!=='1'){
+      var welcome=mk('div',{border:'1px solid rgba(216,15,18,.35)',background:'linear-gradient(135deg,rgba(216,15,18,.16),rgba(0,0,0,.14))',borderRadius:'8px',padding:'12px',margin:'10px 0'});
+      welcome.appendChild(mk('div',{fontSize:'15px',fontWeight:'800',color:C.hl},'İlk kurulum'));
+      welcome.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',lineHeight:'1.45',marginTop:'4px'},'Başlangıç ayarlarını hızlıca seç. Sonradan hepsi değiştirilebilir.'));
+      var wb=mk('div',{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'10px'});
+      var w1=mkBtn('Dengeli',true),w2=mkBtn('Yayın',false),w3=mkBtn('Gizlilik',false);
+      w1.onclick=function(){nativeCmd('profile','mode','normal');set('theme','idgaf');set('firstRunDone','1');applyAll();welcome.style.display='none';say('Dengeli profil seçildi.');};
+      w2.onclick=function(){nativeCmd('profile','mode','stream');set('theme','idgaf');set('firstRunDone','1');applyAll();welcome.style.display='none';say('Yayın profili seçildi.');};
+      w3.onclick=function(){nativeCmd('profile','mode','save');set('block','1');set('upsell','1');set('firstRunDone','1');applyAll();welcome.style.display='none';say('Gizlilik profili seçildi.');};
+      wb.appendChild(w1);wb.appendChild(w2);wb.appendChild(w3);welcome.appendChild(wb);body.appendChild(welcome);
+    }
     FT.forEach(function(o){
       var row=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
       var txt=mk('div',{flex:'1'});
@@ -590,11 +723,15 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     });
 
     body.appendChild(sec('Sistem & Güncelleme'));
+    body.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',lineHeight:'1.4',margin:'2px 0 8px'},'Performans profili teknik ayarları otomatik düzenler. Değişikliklerin tamamı yeniden başlatınca etkili olur.'));
+    profilePills=mkPills(PROFILE_OPTS,profileFromNative(),function(v){nativeCmd('profile','mode',v);say('Profil kaydedildi: '+v);});
+    body.appendChild(profilePills);
     body.appendChild(nativeRow('minimize_to_tray','Kapatınca tepsiye küçült','Pencere kapatılınca uygulama tamamen kapanmaz, sistem tepsisinde çalışmaya devam eder.'));
     body.appendChild(nativeRow('autostart','Windows ile başlat','Windows açıldığında idgafcord otomatik başlatılır.'));
     body.appendChild(nativeRow('start_minimized','Tepside sessiz başlat','Otomatik başlatmada pencere açmadan doğrudan tepside bekler.'));
     body.appendChild(nativeRow('stream_performance','Ekran paylaşımı performansı','GPU hızlandırmayı açık tutar ve paylaşımda takılma/kalite düşmesini azaltır; 1080/60 izne bağlıdır.'));
     body.appendChild(nativeRow('auto_update_check','Güncellemeleri otomatik denetle','Başlangıçta ve 6 saatte bir yeni imzalı sürümü kontrol eder.'));
+    body.appendChild(sec('Ses & Mikrofon'));
     var muteRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var muteTxt=mk('div',{flex:'1'});muteTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Mikrofon susturma kısayolu'));
     muteShortcutText=mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},shortcutLabel(nativeState.mute_shortcut));
@@ -604,9 +741,24 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     var voiceSw=mkSwitch(ison('voiceMute','0'),function(v){onVoiceToggle(v);});
     switches['voiceMute']=voiceSw;
     body.appendChild(mkRow('Sesle mikrofon komutu','Açıkken "mikrofonu kapat", "sesle kapa", "mikrofonu aç" gibi komutları dinler.',voiceSw));
+    var badgeSw=mkSwitch(ison('micBadge','1'),function(v){set('micBadge',v?'1':'0');ensureMicBadge();say('Kaydedildi.');});
+    switches['micBadge']=badgeSw;
+    body.appendChild(mkRow('Mikrofon durum rozeti','Sol altta mikrofon açık/kapalı durumunu küçük rozetle gösterir.',badgeSw));
+    var phraseRow=mk('div',{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:'8px',padding:'12px 0',borderBottom:'1px solid '+C.line2,alignItems:'end'});
+    var ph1=mk('div',{}),ph2=mk('div',{});
+    ph1.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginBottom:'5px'},'Kapat komutu'));
+    ph2.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginBottom:'5px'},'Aç komutu'));
+    voiceMuteInp=mk('input',{width:'100%',boxSizing:'border-box',background:C.field,color:C.fg,border:'1px solid '+C.line,borderRadius:'8px',padding:'9px 10px',fontSize:'12px'});
+    voiceUnmuteInp=mk('input',{width:'100%',boxSizing:'border-box',background:C.field,color:C.fg,border:'1px solid '+C.line,borderRadius:'8px',padding:'9px 10px',fontSize:'12px'});
+    voiceMuteInp.value=get('voiceMutePhrase','mikrofonu kapat');voiceUnmuteInp.value=get('voiceUnmutePhrase','mikrofonu aç');
+    ph1.appendChild(voiceMuteInp);ph2.appendChild(voiceUnmuteInp);
+    var phraseBtn=mkBtn('Kaydet',true);phraseBtn.onclick=function(){set('voiceMutePhrase',voiceMuteInp.value.trim()||'mikrofonu kapat');set('voiceUnmutePhrase',voiceUnmuteInp.value.trim()||'mikrofonu aç');say('Ses komutları kaydedildi.');};
+    phraseRow.appendChild(ph1);phraseRow.appendChild(ph2);phraseRow.appendChild(phraseBtn);body.appendChild(phraseRow);
     var upRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var upTxt=mk('div',{flex:'1'});upTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Güncellemeleri denetle'));
     upTxt.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},'Şimdi GitHub Releases üzerinden yeni sürüm var mı kontrol eder.'));
+    updateStatusEl=mk('div',{fontSize:'12px',color:C.mut,marginTop:'5px',lineHeight:'1.35'},'Son kontrol bekleniyor.');
+    upTxt.appendChild(updateStatusEl);
     var upBtn=mkBtn('Denetle',true);upBtn.onclick=function(){nativeCmd('check_update');say('Güncelleme kontrol ediliyor...');};
     upRow.appendChild(upTxt);upRow.appendChild(upBtn);body.appendChild(upRow);
     body.appendChild(nativeRow('disable_gpu','Donanım hızlandırmayı kapat','GPU kaynak kullanımını azaltır; ekran paylaşımı performans modunu kapatır.'));
@@ -698,20 +850,23 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.6'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.7'));footEl.appendChild(fb);
 
-    card.appendChild(head);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
+    card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
 
     saveBtn.onclick=function(){set('css',themeEl.value);applyAll();say('Özel CSS kaydedildi ve uygulandı.');};
     document.addEventListener('keydown',function(e){if(e.key==='Escape'&&modal&&modal.style.display==='flex')closePanel();});
+    applyTabs(body);
   }catch(e){}}
 
   function refresh(){
     FT.forEach(function(o){if(switches[o.k])switches[o.k].set(ison(o.k,o.def));});
     ['compact','stars','cssOn','bubbles','hideMembers','voiceMute'].forEach(function(k){if(switches[k])switches[k].set(ison(k,'0'));});
+    if(switches['micBadge'])switches['micBadge'].set(ison('micBadge','1'));
     if(switches['splash'])switches['splash'].set(ison('splash','1'));
     if(themePills)themePills.set(get('theme','off'));
+    if(profilePills)profilePills.set(profileFromNative());
     if(radiusPills)radiusPills.set(get('radius','normal'));
     if(logoInp)logoInp.value=get('logo','');
     if(fontInp)fontInp.value=get('font','');
@@ -719,7 +874,11 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(fontRange){fontRange.value=get('fontsize','16');if(fontVal)fontVal.textContent=get('fontsize','16')+'px';}
     if(bgInp)bgInp.value=get('bgimg','');
     if(themeEl)themeEl.value=get('css','');
+    if(voiceMuteInp)voiceMuteInp.value=get('voiceMutePhrase','mikrofonu kapat');
+    if(voiceUnmuteInp)voiceUnmuteInp.value=get('voiceUnmutePhrase','mikrofonu aç');
     if(footEl&&footEl._b)footEl._b.textContent=blockedCount+' istek engellendi';
+    ensureMicBadge();
+    if(modal){var b=modal.querySelector('#ldc-modal-body');if(b)applyTabs(b);}
   }
   function openPanel(){build();nativeCmd('sync');if(modal){modal.style.display='flex';refresh();renderTerm();if(termTimer)clearInterval(termTimer);termTimer=setInterval(renderTerm,1000);}}
   function closePanel(){if(modal)modal.style.display='none';if(termTimer){clearInterval(termTimer);termTimer=null;}}
@@ -727,9 +886,11 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
 
   if(document.body)build();else document.addEventListener('DOMContentLoaded',build);
   if(ison('voiceMute','0'))setTimeout(startVoice,1500);
+  setTimeout(ensureMicBadge,1200);
   // Hafif: yalnızca panel düğmesi kaybolduysa yeniden ekle. CSS'ler adopted
   // sheet olarak kalıcıdır; sürekli yeniden uygulamak gereksiz CPU harcar.
   setInterval(function(){if(document.body&&!document.getElementById('ldc-root'))build();},5000);
+  setInterval(updateMicBadge,2500);
 })();"####;
 
 const MUTE_TOGGLE_SCRIPT: &str = r#"
@@ -873,7 +1034,7 @@ pub fn run() {
 
                 match action.as_str() {
                     "sync" => sync_native_settings(&nav_handle),
-                    "check_update" => spawn_update_check(nav_handle.clone()),
+                    "check_update" => spawn_update_check(nav_handle.clone(), false),
                     "set" => {
                         let enabled = matches!(value.as_str(), "1" | "true" | "on");
                         let mut should_check_update = false;
@@ -930,8 +1091,42 @@ pub fn run() {
                         }
                         sync_native_settings(&nav_handle);
                         if should_check_update {
-                            spawn_update_check(nav_handle.clone());
+                            spawn_update_check(nav_handle.clone(), true);
                         }
+                    }
+                    "profile" => {
+                        let profile = value.trim();
+                        if let Some(state) = nav_handle.try_state::<Mutex<Settings>>() {
+                            if let Ok(mut s) = state.lock() {
+                                match profile {
+                                    "save" => {
+                                        s.disable_gpu = true;
+                                        s.stream_performance = false;
+                                        s.game_mode = false;
+                                    }
+                                    "stream" => {
+                                        s.disable_gpu = false;
+                                        s.stream_performance = true;
+                                        s.game_mode = false;
+                                    }
+                                    "game" => {
+                                        s.disable_gpu = false;
+                                        s.stream_performance = true;
+                                        s.game_mode = true;
+                                    }
+                                    _ => {
+                                        s.disable_gpu = false;
+                                        s.stream_performance = false;
+                                        s.game_mode = false;
+                                    }
+                                }
+                                let _ = n_gpu.set_checked(s.disable_gpu);
+                                let _ = n_stream.set_checked(s.stream_performance);
+                                let _ = n_game.set_checked(s.game_mode);
+                                save_settings(&nav_handle, &s);
+                            }
+                        }
+                        sync_native_settings(&nav_handle);
                     }
                     "set_shortcut" => {
                         let candidate = value.trim().to_string();
@@ -990,7 +1185,7 @@ pub fn run() {
 
             spawn_auto_update_loop(handle.clone());
             if check_on_start {
-                spawn_update_check(handle.clone());
+                spawn_update_check(handle.clone(), true);
             }
 
             let _tray = TrayIconBuilder::with_id("main-tray")
@@ -1069,7 +1264,7 @@ pub fn run() {
                             };
                             sync_native_settings(app);
                             if enabled {
-                                spawn_update_check(app.clone());
+                                spawn_update_check(app.clone(), true);
                             }
                         }
                         "settings" => {
@@ -1087,7 +1282,7 @@ pub fn run() {
                             }
                         }
                         "check_update" => {
-                            spawn_update_check(app.clone());
+                            spawn_update_check(app.clone(), false);
                         }
                         "show" => {
                             ensure_loaded(app);

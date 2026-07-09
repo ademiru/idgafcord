@@ -83,18 +83,11 @@ fn suspend_blank<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// WebView2'ye arayüzü çizip çizmemesini söyler. `false` → arayüz render EDİLMEZ
-/// (GPU/CPU tasarrufu) ama sayfa çalışmaya devam eder: websocket, sesli sohbet
-/// ve bildirimler canlı kalır. Gizliyken bunu kapatmanın hiçbir dezavantajı yok.
-#[cfg(windows)]
-fn set_render<R: Runtime>(app: &AppHandle<R>, visible: bool) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.with_webview(move |pw| unsafe {
-            let _ = pw.controller().SetIsVisible(visible.into());
-        });
-    }
-}
-#[cfg(not(windows))]
+/// (Devre dışı) Eskiden WebView2 controller'ının `SetIsVisible(false)` çağrısıyla
+/// gizliyken çizimi durdururdu. Ancak bu, tepsiden geri açışta WebView2'de bilinen
+/// bir SİYAH YÜZEY / DONMA hatasına yol açıyordu (pencere gösterilirken yüzey
+/// yeniden boyanmıyor). WebView2 zaten gizli/occluded pencereleri kendisi kısar,
+/// bu yüzden optimizasyon gereksiz ve riskli. No-op yapıldı → siyah ekran biter.
 fn set_render<R: Runtime>(_app: &AppHandle<R>, _visible: bool) {}
 
 /// Boş sayfadaysa Discord'u yeniden yükler (pencere gösterilmeden önce).
@@ -427,8 +420,16 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     var s=document.createElement('div');s.id='ldc-splash';
     s.innerHTML='<div class="ldc-sp-wrap"><img class="ldc-sp-mark" src="'+LDC_LOGO_DATA_URI+'" alt=""><div class="ldc-sp-logo"><b>idgaf</b>cord</div><div class="ldc-sp-line"></div><div class="ldc-sp-tag">I DON’T GIVE A FUCK ABOUT YOUR DATA</div></div>';
     host.appendChild(s);
-    setTimeout(function(){s.className='out';},2300);
-    setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},2900);
+    // Splash'i KESİNLİKLE kaldır. setTimeout gizli/occluded pencerede kısılabilir
+    // ve siyah splash ekranda takılı kalabilir; bu yüzden çok yönlü güvence:
+    // süre + Discord çizildi + görünürlük + ilk etkileşim + gerçek-zaman tavanı.
+    var born=Date.now(),done=false;
+    function kill(){if(done)return;done=true;try{s.className='out';}catch(e){}setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},560);}
+    var iv=setInterval(function(){if(done){clearInterval(iv);return;}if(Date.now()-born>2300||ldcRendered()){clearInterval(iv);kill();}},250);
+    (function raf(){if(done)return;if(Date.now()-born>6000){kill();return;}try{requestAnimationFrame(raf);}catch(e){kill();}})();
+    document.addEventListener('click',kill,true);
+    document.addEventListener('keydown',kill,true);
+    document.addEventListener('visibilitychange',function(){if(!document.hidden&&Date.now()-born>1200)kill();});
   }catch(e){}}
   function applyAll(){
     if(SAFE){themeSt.set('');accentSt.set('');uiSt.set('');structSt.set('');starsSt.set('');bgSt.set('');upSt.set('');cssSt.set('');return;}
@@ -1045,7 +1046,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.11'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.12'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
@@ -1163,6 +1164,7 @@ pub fn run() {
             .build(app)?;
             let i_settings = MenuItemBuilder::with_id("settings", "Ayarlar (tema, gizlilik)").build(app)?;
             let i_cache = MenuItemBuilder::with_id("clear_cache", "Önbelleği temizle").build(app)?;
+            let i_repair = MenuItemBuilder::with_id("repair", "Sorun giderme: güvenli yeniden başlat").build(app)?;
             let i_update = MenuItemBuilder::with_id("check_update", "Güncellemeleri denetle").build(app)?;
             let i_show = MenuItemBuilder::with_id("show", "Discord'u Göster").build(app)?;
             let i_quit = MenuItemBuilder::with_id("quit", "Çıkış").build(app)?;
@@ -1172,7 +1174,7 @@ pub fn run() {
                 .separator()
                 .items(&[&i_tray, &i_startmin, &i_autostart, &i_stream, &i_gpu, &i_game])
                 .separator()
-                .items(&[&i_settings, &i_auto_update, &i_cache, &i_update])
+                .items(&[&i_settings, &i_auto_update, &i_cache, &i_repair, &i_update])
                 .separator()
                 .items(&[&i_show, &i_quit])
                 .build()?;
@@ -1368,8 +1370,12 @@ pub fn run() {
                     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu",
                 );
             } else if stream_performance {
+                // NOT: --ignore-gpu-blocklist / --enable-gpu-rasterization / --enable-zero-copy
+                // bazı ekran kartı sürücülerinde SİYAH EKRAN yapıyordu; kaldırıldı. Geriye
+                // yalnızca güvenli (arka plan kısmasını kapatan) bayraklar bırakıldı — ekran
+                // paylaşımı akıcılığına yeter, siyah ekran riski yok.
                 builder = builder.additional_browser_args(
-                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --autoplay-policy=no-user-gesture-required",
+                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --autoplay-policy=no-user-gesture-required",
                 );
             }
             if start_minimized {
@@ -1486,6 +1492,31 @@ pub fn run() {
                             if let Some(w) = app.get_webview_window("main") {
                                 let _ = w.clear_all_browsing_data();
                             }
+                        }
+                        "repair" => {
+                            // Beyaz/siyah ekran yapabilecek HER ŞEYİ güvenli hâle getir:
+                            // native (GPU/oyun modu) + sayfa (tema/splash/özel CSS/arka plan),
+                            // sonra temiz yeniden başlat.
+                            {
+                                let mut s = state.lock().unwrap();
+                                s.stream_performance = false;
+                                s.disable_gpu = false;
+                                s.game_mode = false;
+                                let _ = c_stream.set_checked(false);
+                                let _ = c_gpu.set_checked(false);
+                                let _ = c_game.set_checked(false);
+                                save_settings(app, &s);
+                            }
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                                let _ = w.eval("try{localStorage.setItem('ldc_theme','off');localStorage.setItem('ldc_splash','0');localStorage.setItem('ldc_cssOn','0');localStorage.setItem('ldc_bgimg','');localStorage.removeItem('ldc_css');sessionStorage.removeItem('ldc_safe');}catch(e){}");
+                            }
+                            let app2 = app.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(Duration::from_millis(500));
+                                app2.restart();
+                            });
                         }
                         "check_update" => {
                             spawn_update_check(app.clone(), false);

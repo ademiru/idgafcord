@@ -679,7 +679,49 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(voiceRec&&!voiceStarting)return 'Dinleniyor';
     return 'Başlatılıyor…';
   }
-  function updateVoiceStatus(){if(voiceStatusEl){var s=voiceStatusText();voiceStatusEl.textContent='Durum: '+s;voiceStatusEl.style.color=(s.indexOf('Durdu')>=0)?C.warn:(s==='Dinleniyor'?C.grn:C.mut);}}
+  function updateVoiceStatus(){if(voiceStatusEl){var s=voiceStatusText();voiceStatusEl.textContent=s;voiceStatusEl.style.color=(s.indexOf('Durdu')>=0)?C.warn:(s==='Dinleniyor'?'#fff':C.mut);voiceStatusEl.style.background=(s==='Dinleniyor')?C.grn:C.field;voiceStatusEl.style.borderColor=(s==='Dinleniyor')?C.grn:C.line;}}
+  // Kendine ait, tasarımlı "Sesli komutlar" kartı: tetik kelimelerini belirlersin.
+  var MIC_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+  function buildVoiceCard(){
+    var card=mk('div',{background:'linear-gradient(180deg,rgba(88,101,242,.07),rgba(0,0,0,0))',border:'1px solid '+C.line,borderRadius:'14px',padding:'15px 16px',margin:'8px 0 6px'});
+    var hd=mk('div',{display:'flex',alignItems:'center',gap:'11px',marginBottom:'13px'});
+    var ic=mk('div',{width:'36px',height:'36px',borderRadius:'11px',background:C.acc,display:'flex',alignItems:'center',justifyContent:'center',flex:'0 0 auto',boxShadow:'0 4px 12px rgba(88,101,242,.4)'});ic.innerHTML=MIC_SVG;
+    var htx=mk('div',{flex:'1',minWidth:'0'});
+    htx.appendChild(mk('div',{fontSize:'15px',fontWeight:'800',color:C.hl},'Sesli komutlar'));
+    htx.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginTop:'1px'},'Kendi tetik kelimelerini belirle'));
+    voiceStatusEl=mk('div',{fontSize:'11px',fontWeight:'700',color:C.mut,padding:'5px 10px',borderRadius:'20px',background:C.field,border:'1px solid '+C.line,flex:'0 0 auto',whiteSpace:'nowrap'},voiceStatusText());
+    hd.appendChild(ic);hd.appendChild(htx);hd.appendChild(voiceStatusEl);card.appendChild(hd);
+    function cmdRow(cfg){
+      var wrap=mk('div',{marginTop:cfg.top||'0'});
+      var lab=mk('div',{display:'flex',alignItems:'center',gap:'8px',marginBottom:'7px'});
+      lab.appendChild(mk('span',{width:'9px',height:'9px',borderRadius:'50%',background:cfg.dot,flex:'0 0 auto',boxShadow:'0 0 0 3px '+cfg.glow}));
+      lab.appendChild(mk('span',{fontSize:'13px',fontWeight:'700',color:C.hl},cfg.title));
+      lab.appendChild(mk('span',{fontSize:'11px',color:C.mut},cfg.hint));
+      wrap.appendChild(lab);
+      var inp=mk('input',{width:'100%',boxSizing:'border-box',background:C.field,color:C.fg,border:'1px solid '+C.line,borderRadius:'10px',padding:'11px 12px',fontSize:'13px',fontWeight:'500',outline:'none',transition:'border-color .12s'});
+      inp.type='text';inp.placeholder=cfg.def;inp.value=get(cfg.key,cfg.def);
+      inp.onfocus=function(){inp.style.borderColor=cfg.dot;};inp.onblur=function(){inp.style.borderColor=C.line;};
+      wrap.appendChild(inp);cfg.assign(inp);
+      var chips=mk('div',{display:'flex',flexWrap:'wrap',gap:'6px',marginTop:'8px'});
+      cfg.presets.forEach(function(p){
+        var c=mk('div',{fontSize:'12px',fontWeight:'600',color:C.mut,background:'transparent',border:'1px solid '+C.line,borderRadius:'16px',padding:'5px 12px',cursor:'pointer',transition:'all .12s'},p);
+        c.onmouseenter=function(){c.style.borderColor=cfg.dot;c.style.color=C.hl;};
+        c.onmouseleave=function(){c.style.borderColor=C.line;c.style.color=C.mut;};
+        c.onclick=function(){inp.value=p;set(cfg.key,p);say(cfg.title+' komutu ayarlandı: “'+p+'”');};
+        chips.appendChild(c);
+      });
+      wrap.appendChild(chips);return wrap;
+    }
+    card.appendChild(cmdRow({title:'Sustur',hint:'· duyunca mikrofonu kapatır',dot:'#f23f42',glow:'rgba(242,63,66,.18)',key:'voiceMutePhrase',def:'mikrofonu kapat',presets:['mikrofonu kapat','sustur','sessiz ol','beni sustur'],assign:function(i){voiceMuteInp=i;}}));
+    card.appendChild(cmdRow({title:'Aç',hint:'· duyunca mikrofonu açar',dot:'#23a55a',glow:'rgba(35,165,90,.18)',key:'voiceUnmutePhrase',def:'mikrofonu aç',top:'14px',presets:['mikrofonu aç','sesimi aç','geri aç','konuşacağım'],assign:function(i){voiceUnmuteInp=i;}}));
+    var act=mk('div',{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'15px'});
+    var save=mkBtn('Kaydet',true);save.onclick=function(){set('voiceMutePhrase',(voiceMuteInp.value||'').trim()||'mikrofonu kapat');set('voiceUnmutePhrase',(voiceUnmuteInp.value||'').trim()||'mikrofonu aç');say('Sesli komutlar kaydedildi.');};
+    var vrestart=mkBtn('Yeniden başlat',false);vrestart.onclick=function(){set('voiceMute','1');if(switches['voiceMute'])switches['voiceMute'].set(true);restartVoice();say('Ses tanıma yeniden başlatıldı — dinleniyor.');};
+    var vtest=mkBtn('Mikrofonu test et',false);vtest.onclick=function(){var s=micState();if(s==='unknown')say('Discord’un mikrofon düğmesi bulunamadı — bir ses kanalındayken dene.',C.warn);else say('Mikrofon düğmesi bulundu (şu an “'+(s==='live'?'açık':'kapalı')+'”). Komutlar çalışmalı.');};
+    act.appendChild(save);act.appendChild(vrestart);act.appendChild(vtest);card.appendChild(act);
+    card.appendChild(mk('div',{fontSize:'11px',color:C.mut,marginTop:'11px',lineHeight:'1.5'},'İpucu: bu kelimelerin doğal varyasyonlarını da anlar (ör. “mikrofonu kapatır mısın”). Cümlenin içinde geçmesi yeter.'));
+    return card;
+  }
 
   /* ---------------- Ayar paneli (CSSOM, IPC yok) ---------------- */
   var GEAR='<svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.9 4.6l1.9 1.5-1.9 3.3-2.3-.9c-.4.4-.9.6-1.4.9l-.3 2.4H9.2l-.3-2.4c-.5-.3-1-.5-1.4-.9l-2.3.9L3.3 14.1l1.9-1.5c0-.2-.1-.4-.1-.6s.1-.4.1-.6L3.3 9.9l1.9-3.3 2.3.9c.4-.4.9-.6 1.4-.9L9.2 4h4.6l.3 2.4c.5.3 1 .5 1.4.9l2.3-.9 1.9 3.3-1.9 1.5c0 .2.1.4.1.6s-.1.4 0 .8z"/></svg>';
@@ -967,29 +1009,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     var badgeSw=mkSwitch(ison('micBadge','1'),function(v){set('micBadge',v?'1':'0');ensureMicBadge();say('Kaydedildi.');});
     switches['micBadge']=badgeSw;
     body.appendChild(mkRow('Mikrofon durum rozeti','Sol altta mikrofon açık/kapalı durumunu küçük rozetle gösterir.',badgeSw));
-    var phraseRow=mk('div',{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:'8px',padding:'12px 0',borderBottom:'1px solid '+C.line2,alignItems:'end'});
-    var ph1=mk('div',{}),ph2=mk('div',{});
-    ph1.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginBottom:'5px'},'Kapat komutu'));
-    ph2.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginBottom:'5px'},'Aç komutu'));
-    voiceMuteInp=mk('input',{width:'100%',boxSizing:'border-box',background:C.field,color:C.fg,border:'1px solid '+C.line,borderRadius:'8px',padding:'9px 10px',fontSize:'12px'});
-    voiceUnmuteInp=mk('input',{width:'100%',boxSizing:'border-box',background:C.field,color:C.fg,border:'1px solid '+C.line,borderRadius:'8px',padding:'9px 10px',fontSize:'12px'});
-    voiceMuteInp.value=get('voiceMutePhrase','mikrofonu kapat');voiceUnmuteInp.value=get('voiceUnmutePhrase','mikrofonu aç');
-    ph1.appendChild(voiceMuteInp);ph2.appendChild(voiceUnmuteInp);
-    var phraseBtn=mkBtn('Kaydet',true);phraseBtn.onclick=function(){set('voiceMutePhrase',voiceMuteInp.value.trim()||'mikrofonu kapat');set('voiceUnmutePhrase',voiceUnmuteInp.value.trim()||'mikrofonu aç');say('Ses komutları kaydedildi.');};
-    phraseRow.appendChild(ph1);phraseRow.appendChild(ph2);phraseRow.appendChild(phraseBtn);body.appendChild(phraseRow);
-    var vhelp=mk('div',{background:C.field,border:'1px solid '+C.line,borderRadius:'10px',padding:'11px 13px',margin:'12px 0'});
-    vhelp.appendChild(mk('div',{fontSize:'12px',color:C.hl,fontWeight:'600',marginBottom:'5px'},'Anlaşılan örnek komutlar'));
-    var vex=[['Kapat','“mikrofonu kapat”, “sustur”, “beni sustur”, “sesi kapat”'],['Aç','“mikrofonu aç”, “sesimi aç”, “geri aç”'],['Değiştir','“mikrofonu değiştir”']];
-    vex.forEach(function(p){var r=mk('div',{display:'flex',gap:'8px',fontSize:'12px',color:'#b5bac1',lineHeight:'1.5'});r.appendChild(mk('span',{color:C.mut,fontWeight:'700',minWidth:'62px'},p[0]));r.appendChild(mk('span',{},p[1]));vhelp.appendChild(r);});
-    voiceStatusEl=mk('div',{fontSize:'12px',color:C.mut,fontWeight:'600',marginTop:'9px'},'Durum: '+voiceStatusText());updateVoiceStatus();
-    vhelp.appendChild(voiceStatusEl);
-    var vtestRow=mk('div',{display:'flex',alignItems:'center',flexWrap:'wrap',gap:'8px',marginTop:'8px'});
-    var vrestart=mkBtn('Ses tanımayı yeniden başlat',true);
-    vrestart.onclick=function(){set('voiceMute','1');if(switches['voiceMute'])switches['voiceMute'].set(true);restartVoice();say('Ses tanıma yeniden başlatıldı — dinleniyor.');};
-    var vtest=mkBtn('Mikrofon düğmesini test et',false);
-    vtest.onclick=function(){var s=micState();if(s==='unknown'){say('Discord’un mikrofon düğmesi bulunamadı — bir ses kanalına bağlıyken dene.',C.warn);}else{say('Mikrofon düğmesi bulundu: durum “'+(s==='live'?'açık':'kapalı')+'”. Komutlar çalışmalı.');}};
-    vtestRow.appendChild(vrestart);vtestRow.appendChild(vtest);vhelp.appendChild(vtestRow);
-    body.appendChild(vhelp);
+    body.appendChild(buildVoiceCard());updateVoiceStatus();
     var upRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var upTxt=mk('div',{flex:'1'});upTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Güncellemeleri denetle'));
     upTxt.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},'Şimdi GitHub Releases üzerinden yeni sürüm var mı kontrol eder.'));
@@ -1087,7 +1107,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.14'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.15'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);

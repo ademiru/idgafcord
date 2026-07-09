@@ -507,24 +507,31 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     });
     return bestScore>45?best:null;
   }
-  function micAction(btn){
-    var t=textOf(btn);
-    if(/unmute|sesini aç|sesi aç|mikrofonu aç|mikrofon aç|aç/.test(t))return 'unmute';
-    if(/mute|sustur|sessiz|mikrofonu kapat|mikrofon kapat|kapat/.test(t))return 'mute';
-    return 'toggle';
+  // Mikrofonun ŞU ANKİ durumunu butonun sunduğu EYLEMDEN oku. Türkçe/İngilizce
+  // güvenli: "susturmayı kaldır" / "sesi aç" / "unmute" → şu an KAPALI (buton açmayı
+  // sunuyor). Sıra önemli: önce aç/kaldır kontrol edilir, çünkü "susturmayı" içinde
+  // "sustur" geçer ve yanlışlıkla "açık" sanılırdı (aç komutunun çalışmama nedeni).
+  function micMuteState(btn){
+    btn=btn||micButton();if(!btn)return null;
+    var t=normVoice(textOf(btn));
+    if(/\bunmute\b|kaldir|(^|\s)ac(\s|$)|sesini ac|sesi ac|mikrofonu ac|mikrofon ac|susturmayi/.test(t))return 'muted';
+    if(/\bmute\b|sustur|sessiz|kapat|kapa/.test(t))return 'live';
+    return null;
   }
+  // İstenen duruma göre gerekiyorsa tıklar. Durum bilinmiyorsa (null) yine tıklar
+  // (kullanıcı komut verdi). Gerçekten tıklanıp tıklanmadığını döndürür.
   function setMic(desired){
-    var btn=micButton();
-    if(!btn)return false;
-    var action=micAction(btn);
-    if(!desired||desired==='toggle'||action==='toggle'||desired===action){
-      btn.click();
-    }
-    setTimeout(updateMicBadge,120);
-    return true;
+    var btn=micButton();if(!btn)return false;
+    var st=micMuteState(btn),click=false;
+    if(!desired||desired==='toggle')click=true;
+    else if(desired==='mute')click=(st!=='muted');
+    else if(desired==='unmute')click=(st!=='live');
+    if(click){try{btn.click();}catch(e){return false;}}
+    setTimeout(updateMicBadge,170);
+    return {found:true,clicked:click,state:st};
   }
-  window.__LDC_toggleMute=function(){var ok=setMic('toggle');if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return ok;};
-  window.__LDC_setMute=function(v){var ok=setMic(v);if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return ok;};
+  window.__LDC_toggleMute=function(){var ok=setMic('toggle');if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return !!ok;};
+  window.__LDC_setMute=function(v){var ok=setMic(v);if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return !!ok;};
 
   var voiceRec=null,voiceActive=false,voiceRestartTimer=null,voiceWatchdog=null,voiceLastAction='',voiceLastActedAt=0,voiceAlive=0;
   var voiceStarting=false,voiceStartedAt=0,voiceFails=0,voiceHardErr=false,voiceGaveUp=false;
@@ -535,11 +542,18 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     .replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();}
   // Komut çözümleyici: normalize edilmiş metinde niyeti bulur. Yanlış tetiklemeyi
   // azaltmak için (özel ifade hariç) mikrofon/ses anahtarı + fiil şartı aranır.
+  // Belirlenen prefix'i ESNEK eşleştir: birebir geçmese de kelimelerin kökleri
+  // geçiyorsa kabul et (ekler/çekimler ve tanıma sapmaları için tolerans).
+  function phraseHit(t,phrase){
+    phrase=normVoice(phrase);if(!phrase)return false;
+    if(t.indexOf(phrase)>=0)return true;
+    var ws=phrase.split(' ').filter(function(w){return w.length>=2;});
+    if(!ws.length)return false;
+    return ws.every(function(w){var stem=w.length>=4?w.slice(0,w.length-1):w;return t.indexOf(stem)>=0;});
+  }
   function matchVoiceCommand(t){
-    var up=normVoice(get('voiceUnmutePhrase','mikrofonu aç'));
-    var mp=normVoice(get('voiceMutePhrase','mikrofonu kapat'));
-    if(up&&t.indexOf(up)>=0)return 'unmute';
-    if(mp&&t.indexOf(mp)>=0)return 'mute';
+    if(phraseHit(t,get('voiceUnmutePhrase','mikrofonu aç')))return 'unmute';
+    if(phraseHit(t,get('voiceMutePhrase','mikrofonu kapat')))return 'mute';
     var mic=/\b(mikrofon\w*|mikp\w*|ses|sesi|sesim\w*|kendimi)\b/.test(t);
     if(/\bunmute\b|\bkonusabilir\w*\b/.test(t))return 'unmute';
     if(mic&&/\b(ac|acar|acsana|acabilir|acalim|geri ?ac|acin)\b/.test(t))return 'unmute';
@@ -554,19 +568,21 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     // Aynı komutu 1.6 sn içinde tekrar uygulama (interim + final çift tetiklemesini engeller).
     if(cmd===voiceLastAction&&now-voiceLastActedAt<1600)return true;
     voiceLastAction=cmd;voiceLastActedAt=now;
-    var ok=setMic(cmd);
-    if(!ok){voiceHudFlash('Mikrofon düğmesi bulunamadı','warn');say('Mikrofon düğmesi bulunamadı.',C.warn);return true;}
-    voiceHudFlash(cmd==='mute'?'Mikrofon kapatıldı':(cmd==='unmute'?'Mikrofon açıldı':'Mikrofon değiştirildi'),cmd);
-    say(cmd==='mute'?'Ses komutu: mikrofon kapatıldı.':(cmd==='unmute'?'Ses komutu: mikrofon açıldı.':'Ses komutu: mikrofon değiştirildi.'));
+    var r=setMic(cmd);
+    if(!r){voiceHudFlash('Mikrofon düğmesi bulunamadı','warn');say('Mikrofon düğmesi bulunamadı — ses kanalındayken dene.',C.warn);return true;}
+    // Gerçekten tıklandı mı ona göre DÜRÜST geri bildirim (zaten açık/kapalıysa yanlış demez).
+    var msg;
+    if(cmd==='mute')msg=r.clicked?'Mikrofon kapatıldı':'Mikrofon zaten kapalı';
+    else if(cmd==='unmute')msg=r.clicked?'Mikrofon açıldı':'Mikrofon zaten açık';
+    else msg='Mikrofon değiştirildi';
+    voiceHudFlash(msg,cmd);
+    say('Ses komutu: '+msg+'.');
     return true;
   }
   // Eski isim (geriye dönük uyumluluk).
   function handleVoice(s){return actVoice(normVoice(s));}
 
-  function micState(){
-    var btn=micButton();if(!btn)return 'unknown';
-    var a=micAction(btn);return a==='unmute'?'muted':(a==='mute'?'live':'unknown');
-  }
+  function micState(){var s=micMuteState();return s==='muted'?'muted':(s==='live'?'live':'unknown');}
   function updateMicBadge(){
     if(!micBadge||!ison('micBadge','1'))return;
     var s=micState(),on=s==='live';
@@ -1128,7 +1144,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.16'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.17'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);

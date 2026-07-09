@@ -120,6 +120,30 @@ fn save_settings<R: Runtime>(app: &AppHandle<R>, settings: &Settings) {
     }
 }
 
+fn sync_native_settings<R: Runtime>(app: &AppHandle<R>) {
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+    let Some(settings) = app
+        .try_state::<Mutex<Settings>>()
+        .and_then(|s| s.lock().ok().map(|s| s.clone()))
+    else {
+        return;
+    };
+
+    let payload = serde_json::json!({
+        "minimize_to_tray": settings.minimize_to_tray,
+        "start_minimized": settings.start_minimized,
+        "autostart": settings.autostart,
+        "disable_gpu": settings.disable_gpu,
+        "game_mode": settings.game_mode,
+        "auto_update_check": settings.auto_update_check,
+    });
+    let _ = w.eval(&format!(
+        "window.__LDC_setNativeSettings&&window.__LDC_setNativeSettings({payload});"
+    ));
+}
+
 fn spawn_update_check<R: Runtime>(app: AppHandle<R>) {
     tauri::async_runtime::spawn(async move {
         if let Ok(updater) = app.updater() {
@@ -338,7 +362,8 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   function st(el,o){for(var k in o){el.style[k]=o[k];}return el;}
   function mk(tag,o,txt){var e=document.createElement(tag);if(o)st(e,o);if(txt!=null)e.textContent=txt;return e;}
   function hover(el,a,b){el.addEventListener('mouseenter',function(){el.style.background=b;});el.addEventListener('mouseleave',function(){el.style.background=a;});}
-  var statusEl,themeEl,modal,footEl,switches={},themePills,accentInp,fontRange,fontVal,bgInp,termEl,termSumEl,termTimer=null,radiusPills,logoInp,fontInp;
+  var statusEl,themeEl,modal,footEl,switches={},nativeSwitches={},themePills,accentInp,fontRange,fontVal,bgInp,termEl,termSumEl,termTimer=null,radiusPills,logoInp,fontInp;
+  var nativeState={minimize_to_tray:true,start_minimized:false,autostart:false,disable_gpu:false,game_mode:false,auto_update_check:true};
   function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':'&gt;';});}
   function fmtTime(t){var d=new Date(t),p=function(n){return(n<10?'0':'')+n;};return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
   function shortUrl(u){return String(u).replace(/^[^/]*\//,'/').split('?')[0].slice(0,52);}
@@ -380,6 +405,21 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     w.onclick=function(){w._c=!w._c;r();cb(w._c);};w.set=function(v){w._c=!!v;r();};return w;
   }
   function onToggle(k,v){set(k,v?'1':'0');applyAll();say('Kaydedildi.');}
+  function nativeCmd(action,key,value){
+    var u='idgafcord://native?action='+encodeURIComponent(action||'');
+    if(key)u+='&key='+encodeURIComponent(key);
+    if(value!=null)u+='&value='+encodeURIComponent(value);
+    try{window.location.href=u;}catch(e){}
+  }
+  function nativeRow(key,title,desc){
+    var sw=mkSwitch(!!nativeState[key],function(v){nativeCmd('set',key,v?'1':'0');say('Kaydedildi.');});
+    nativeSwitches[key]=sw;
+    return mkRow(title,desc,sw);
+  }
+  window.__LDC_setNativeSettings=function(s){
+    nativeState=s||nativeState;
+    for(var k in nativeSwitches){if(k in nativeState)nativeSwitches[k].set(!!nativeState[k]);}
+  };
 
   function build(){try{
     if(document.getElementById('ldc-root')||!document.body)return;
@@ -410,7 +450,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     var card=mk('div',{width:'560px',maxWidth:'calc(100vw - 32px)',maxHeight:'calc(100vh - 64px)',background:C.bg,color:C.fg,borderRadius:'14px',boxShadow:'0 12px 40px rgba(0,0,0,.55)',display:'flex',flexDirection:'column',overflow:'hidden'});
 
     var head=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'18px 20px',borderBottom:'1px solid '+C.line});
-    var ht=mk('div',{});ht.appendChild(mk('div',{fontSize:'17px',fontWeight:'700',color:C.hl},'Lightweight Discord'));ht.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginTop:'2px'},'Görünüm & Gizlilik'));
+    var ht=mk('div',{});ht.appendChild(mk('div',{fontSize:'17px',fontWeight:'700',color:C.hl},'Lightweight Discord'));ht.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginTop:'2px'},'Görünüm, Sistem & Gizlilik'));
     var x=mk('div',{cursor:'pointer',color:'#b5bac1',fontSize:'24px',lineHeight:'1',padding:'2px 8px',borderRadius:'6px'},'×');hover(x,'transparent','#3f4147');x.onclick=closePanel;
     head.appendChild(ht);head.appendChild(x);
 
@@ -424,6 +464,19 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
       var sw=mkSwitch(ison(o.k,o.def),(function(key){return function(v){onToggle(key,v);};})(o.k));
       switches[o.k]=sw;row.appendChild(txt);row.appendChild(sw);body.appendChild(row);
     });
+
+    body.appendChild(sec('Sistem & Güncelleme'));
+    body.appendChild(nativeRow('minimize_to_tray','Kapatınca tepsiye küçült','Pencere kapatılınca uygulama tamamen kapanmaz, sistem tepsisinde çalışmaya devam eder.'));
+    body.appendChild(nativeRow('autostart','Windows ile başlat','Windows açıldığında idgafcord otomatik başlatılır.'));
+    body.appendChild(nativeRow('start_minimized','Tepside sessiz başlat','Otomatik başlatmada pencere açmadan doğrudan tepside bekler.'));
+    body.appendChild(nativeRow('auto_update_check','Güncellemeleri otomatik denetle','Başlangıçta ve 6 saatte bir yeni imzalı sürümü kontrol eder.'));
+    var upRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
+    var upTxt=mk('div',{flex:'1'});upTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Güncellemeleri denetle'));
+    upTxt.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},'Şimdi GitHub Releases üzerinden yeni sürüm var mı kontrol eder.'));
+    var upBtn=mkBtn('Denetle',true);upBtn.onclick=function(){nativeCmd('check_update');say('Güncelleme kontrol ediliyor...');};
+    upRow.appendChild(upTxt);upRow.appendChild(upBtn);body.appendChild(upRow);
+    body.appendChild(nativeRow('disable_gpu','Donanım hızlandırmayı kapat','GPU kaynak kullanımını azaltır; değişiklik yeniden başlatmadan sonra etkili olur.'));
+    body.appendChild(nativeRow('game_mode','Oyun modu: tepsideyken askıya al','Tepsiye küçültülünce Discord bağlantısını tamamen askıya alır; bildirimler durabilir.'));
 
     body.appendChild(sec('Engellenen izleme istekleri'));
     body.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',lineHeight:'1.4',marginBottom:'2px'},'Discord arka planda ne yaptığını takip eden istekler gönderir; hepsi ağa çıkmadan engellenir.'));
@@ -506,12 +559,12 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     var saveBtn=mkBtn('CSS Kaydet & Uygula',true);
     tb.appendChild(saveBtn);body.appendChild(tb);
 
-    var note=mk('div',{fontSize:'12px',color:C.mut,marginTop:'16px',lineHeight:'1.4'},'İşletim sistemi ayarları (tepsiye küçült, Windows ile başlat, önbellek, güncelleme…) sistem tepsisi ikonuna sağ tıklayarak açılan menüdedir.');
+    var note=mk('div',{fontSize:'12px',color:C.mut,marginTop:'16px',lineHeight:'1.4'},'Sistem ayarları bu panelden ve sistem tepsisi menüsünden aynı kayıtlı ayarları değiştirir.');
     body.appendChild(note);
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.1'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.2'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
@@ -534,7 +587,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(themeEl)themeEl.value=get('css','');
     if(footEl&&footEl._b)footEl._b.textContent=blockedCount+' istek engellendi';
   }
-  function openPanel(){build();if(modal){modal.style.display='flex';refresh();renderTerm();if(termTimer)clearInterval(termTimer);termTimer=setInterval(renderTerm,1000);}}
+  function openPanel(){build();nativeCmd('sync');if(modal){modal.style.display='flex';refresh();renderTerm();if(termTimer)clearInterval(termTimer);termTimer=setInterval(renderTerm,1000);}}
   function closePanel(){if(modal)modal.style.display='none';if(termTimer){clearInterval(termTimer);termTimer=null;}}
   window.__LDC_openSettings=openPanel;
 
@@ -584,41 +637,7 @@ pub fn run() {
             }
             settings.autostart = autostart.is_enabled().unwrap_or(settings.autostart);
 
-            // Ana pencere. Betik hem document-start'ta hem sayfa yüklenince
-            // çalıştırılır; __LDC_INIT__ koruması çift çalışmayı engeller.
-            let bootstrap = bootstrap_script();
-            let bootstrap_for_load = bootstrap.clone();
-
-            let mut builder = WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::External("https://discord.com/app".parse().unwrap()),
-            )
-            .title("idgafcord")
-            .inner_size(1280.0, 800.0)
-            .min_inner_size(800.0, 600.0)
-            .center()
-            .initialization_script(&bootstrap)
-            .on_page_load(move |window, payload| {
-                if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
-                    let _ = window.eval(&bootstrap_for_load);
-                }
-            });
-            if settings.disable_gpu {
-                builder = builder.additional_browser_args(
-                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu",
-                );
-            }
-            if settings.start_minimized {
-                builder = builder.visible(false);
-            }
-            let _window = builder.build()?;
-
-            if let Ok(shortcut) = Shortcut::from_str("CommandOrControl+Shift+M") {
-                let _ = app.global_shortcut().register(shortcut);
-            }
-
-            // ---- Tepsi menüsü (işletim sistemi ayarları + eylemler) ----
+            // ---- Tepsi menüsü ve Discord içi ayar paneli aynı native ayarları kullanır. ----
             let i_tray = CheckMenuItemBuilder::with_id("t_tray", "Kapatınca tepsiye küçült")
                 .checked(settings.minimize_to_tray)
                 .build(app)?;
@@ -660,9 +679,125 @@ pub fn run() {
             let c_gpu = i_gpu.clone();
             let c_game = i_game.clone();
             let c_auto_update = i_auto_update.clone();
+            let n_tray = i_tray.clone();
+            let n_startmin = i_startmin.clone();
+            let n_autostart = i_autostart.clone();
+            let n_gpu = i_gpu.clone();
+            let n_game = i_game.clone();
+            let n_auto_update = i_auto_update.clone();
             let check_on_start = settings.auto_update_check;
+            let disable_gpu = settings.disable_gpu;
+            let start_minimized = settings.start_minimized;
 
             app.manage(Mutex::new(settings));
+
+            // Ana pencere. Betik hem document-start'ta hem sayfa yüklenince
+            // çalıştırılır; __LDC_INIT__ koruması çift çalışmayı engeller.
+            let bootstrap = bootstrap_script();
+            let bootstrap_for_load = bootstrap.clone();
+            let nav_handle = handle.clone();
+
+            let mut builder = WebviewWindowBuilder::new(
+                app,
+                "main",
+                WebviewUrl::External("https://discord.com/app".parse().unwrap()),
+            )
+            .title("idgafcord")
+            .inner_size(1280.0, 800.0)
+            .min_inner_size(800.0, 600.0)
+            .center()
+            .initialization_script(&bootstrap)
+            .on_page_load(move |window, payload| {
+                if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                    let _ = window.eval(&bootstrap_for_load);
+                    sync_native_settings(window.app_handle());
+                }
+            })
+            .on_navigation(move |url| {
+                if url.scheme() != "idgafcord" || url.host_str() != Some("native") {
+                    return true;
+                }
+
+                let mut action = String::new();
+                let mut key = String::new();
+                let mut value = String::new();
+                for (k, v) in url.query_pairs() {
+                    match k.as_ref() {
+                        "action" => action = v.into_owned(),
+                        "key" => key = v.into_owned(),
+                        "value" => value = v.into_owned(),
+                        _ => {}
+                    }
+                }
+
+                match action.as_str() {
+                    "sync" => sync_native_settings(&nav_handle),
+                    "check_update" => spawn_update_check(nav_handle.clone()),
+                    "set" => {
+                        let enabled = matches!(value.as_str(), "1" | "true" | "on");
+                        let mut should_check_update = false;
+                        if let Some(state) = nav_handle.try_state::<Mutex<Settings>>() {
+                            if let Ok(mut s) = state.lock() {
+                                match key.as_str() {
+                                    "minimize_to_tray" => {
+                                        s.minimize_to_tray = enabled;
+                                        let _ = n_tray.set_checked(enabled);
+                                    }
+                                    "start_minimized" => {
+                                        s.start_minimized = enabled;
+                                        let _ = n_startmin.set_checked(enabled);
+                                    }
+                                    "autostart" => {
+                                        let mgr = nav_handle.autolaunch();
+                                        if enabled {
+                                            let _ = mgr.enable();
+                                        } else {
+                                            let _ = mgr.disable();
+                                        }
+                                        s.autostart = mgr.is_enabled().unwrap_or(enabled);
+                                        let _ = n_autostart.set_checked(s.autostart);
+                                    }
+                                    "disable_gpu" => {
+                                        s.disable_gpu = enabled;
+                                        let _ = n_gpu.set_checked(enabled);
+                                    }
+                                    "game_mode" => {
+                                        s.game_mode = enabled;
+                                        let _ = n_game.set_checked(enabled);
+                                    }
+                                    "auto_update_check" => {
+                                        s.auto_update_check = enabled;
+                                        let _ = n_auto_update.set_checked(enabled);
+                                        should_check_update = enabled;
+                                    }
+                                    _ => {}
+                                }
+                                save_settings(&nav_handle, &s);
+                            }
+                        }
+                        sync_native_settings(&nav_handle);
+                        if should_check_update {
+                            spawn_update_check(nav_handle.clone());
+                        }
+                    }
+                    _ => {}
+                }
+                false
+            });
+            if disable_gpu {
+                builder = builder.additional_browser_args(
+                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu",
+                );
+            }
+            if start_minimized {
+                builder = builder.visible(false);
+            }
+            let _window = builder.build()?;
+
+            if let Ok(shortcut) = Shortcut::from_str("CommandOrControl+Shift+M") {
+                let _ = app.global_shortcut().register(shortcut);
+            }
+
             spawn_auto_update_loop(handle.clone());
             if check_on_start {
                 spawn_update_check(handle.clone());
@@ -681,12 +816,16 @@ pub fn run() {
                             s.minimize_to_tray = !s.minimize_to_tray;
                             let _ = c_tray.set_checked(s.minimize_to_tray);
                             save_settings(app, &s);
+                            drop(s);
+                            sync_native_settings(app);
                         }
                         "t_startmin" => {
                             let mut s = state.lock().unwrap();
                             s.start_minimized = !s.start_minimized;
                             let _ = c_startmin.set_checked(s.start_minimized);
                             save_settings(app, &s);
+                            drop(s);
+                            sync_native_settings(app);
                         }
                         "t_autostart" => {
                             let mut s = state.lock().unwrap();
@@ -695,18 +834,24 @@ pub fn run() {
                             if s.autostart { let _ = mgr.enable(); } else { let _ = mgr.disable(); }
                             let _ = c_autostart.set_checked(s.autostart);
                             save_settings(app, &s);
+                            drop(s);
+                            sync_native_settings(app);
                         }
                         "t_gpu" => {
                             let mut s = state.lock().unwrap();
                             s.disable_gpu = !s.disable_gpu;
                             let _ = c_gpu.set_checked(s.disable_gpu);
                             save_settings(app, &s);
+                            drop(s);
+                            sync_native_settings(app);
                         }
                         "t_game" => {
                             let mut s = state.lock().unwrap();
                             s.game_mode = !s.game_mode;
                             let _ = c_game.set_checked(s.game_mode);
                             save_settings(app, &s);
+                            drop(s);
+                            sync_native_settings(app);
                         }
                         "t_auto_update" => {
                             let enabled = {
@@ -716,6 +861,7 @@ pub fn run() {
                                 save_settings(app, &s);
                                 s.auto_update_check
                             };
+                            sync_native_settings(app);
                             if enabled {
                                 spawn_update_check(app.clone());
                             }

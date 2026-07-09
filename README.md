@@ -7,7 +7,8 @@ Discord'un web arayüzünü saran, hafif ve gizlilik odaklı bir Tauri masaüst�
 Tüm ayarlar **uygulama içindeki ayar panelinden** yönetilir: Discord penceresinin
 sağ alt köşesindeki **dişli düğmeye** tıklayın (ya da tepsi menüsünden "Ayarlar").
 Panel Discord temasına uygun; anahtarlar (toggle), tema (CSS) düzenleyici ve
-bakım düğmeleri içerir. Ayarlar `settings.json` içinde kalıcı saklanır.
+bakım düğmeleri içerir. Sistem ayarları ve güncelleme kontrolü de bu paneldedir.
+Ayarlar `settings.json` içinde kalıcı saklanır.
 Tepsi menüsü sadeleştirildi: **Göster / Ayarlar / Çıkış** (sol tık = pencereyi göster).
 
 - **Sistem tepsisi**: Kapatınca uygulama tamamen kapanmaz, tepsiye küçülür (opsiyonel).

@@ -487,47 +487,75 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
 
   function textOf(el){return ((el&&((el.getAttribute('aria-label')||'')+' '+(el.getAttribute('title')||'')+' '+(el.textContent||'')))||'').toLowerCase();}
   function visible(el){var r=el.getBoundingClientRect();return r.width>8&&r.height>8&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;}
+  // Aynı fiziksel düğme hem sustur hem aç için kullanılsın diye önbelleğe alınır.
+  var micBtnCache=null,micLiveSig=null,micMutedSig=null;
   function micButton(){
+    if(micBtnCache&&document.contains(micBtnCache)&&visible(micBtnCache))return micBtnCache;
+    micBtnCache=null;
     var nodes=Array.prototype.slice.call(document.querySelectorAll('button,[role="button"],[aria-label]'));
     var best=null,bestScore=-1;
     nodes.forEach(function(el){
       if(!visible(el))return;
       var t=textOf(el),score=0;
       if(!t)return;
-      // Mikrofon susturma düğmesinin güçlü sinyalleri (TR + EN).
       if(/microphone|mikrofon/.test(t))score+=80;
       if(/(^|\s)(mute|unmute)(\s|$)|sustur|susturmayı aç|sesini aç|sesi aç/.test(t))score+=50;
-      // Komşu düğmeleri (kamera/ekran/yayın/kulaklık/etkinlik) YANLIŞLIKLA seçme.
       if(/deafen|kulak|sağır|sagir|bildirim|notification|channel|server|sunucu|kanal|soundboard|activity|etkinlik|kamera|camera|video|ekran|screen|share|yayın|paylaş|hang ?up|ayrıl|disconnect|çıkış/.test(t))score-=95;
       var r=el.getBoundingClientRect();
-      // Sol-alt ses/kullanıcı paneli (mute düğmesi burada durur).
       if(r.left<440&&r.top>innerHeight-220)score+=60;
       if(el.tagName==='BUTTON')score+=8;
       if(score>bestScore){bestScore=score;best=el;}
     });
-    return bestScore>45?best:null;
+    if(bestScore>45){micBtnCache=best;return best;}
+    return null;
   }
-  // Mikrofonun ŞU ANKİ durumunu butonun sunduğu EYLEMDEN oku. Türkçe/İngilizce
-  // güvenli: "susturmayı kaldır" / "sesi aç" / "unmute" → şu an KAPALI (buton açmayı
-  // sunuyor). Sıra önemli: önce aç/kaldır kontrol edilir, çünkü "susturmayı" içinde
-  // "sustur" geçer ve yanlışlıkla "açık" sanılırdı (aç komutunun çalışmama nedeni).
+  // Durum "imzası": yazı + aria + ikon boyutu. Buton yazısı değişmese bile ikon
+  // (kapalıda çapraz çizgi) değiştiği için imza sustur/aç arasında farklılaşır.
+  function micSig(btn){btn=btn||micButton();if(!btn)return '';var s=btn.querySelector('svg');return normVoice(textOf(btn))+'|'+btn.getAttribute('aria-pressed')+'|'+btn.getAttribute('aria-checked')+'|'+(s?s.innerHTML.length:0);}
+  // Mikrofon durumunu ÇOK sinyalli oku: (1) öğrenilmiş imza, (2) yazı, (3) aria.
   function micMuteState(btn){
     btn=btn||micButton();if(!btn)return null;
+    var sig=micSig(btn);
+    if(micMutedSig&&sig===micMutedSig)return 'muted';
+    if(micLiveSig&&sig===micLiveSig)return 'live';
     var t=normVoice(textOf(btn));
     if(/\bunmute\b|kaldir|(^|\s)ac(\s|$)|sesini ac|sesi ac|mikrofonu ac|mikrofon ac|susturmayi/.test(t))return 'muted';
     if(/\bmute\b|sustur|sessiz|kapat|kapa/.test(t))return 'live';
+    var ap=btn.getAttribute('aria-pressed'),ac=btn.getAttribute('aria-checked');
+    if(ap==='true'||ac==='true')return 'muted';
+    if(ap==='false'||ac==='false')return 'live';
     return null;
   }
-  // İstenen duruma göre gerekiyorsa tıklar. Durum bilinmiyorsa (null) yine tıklar
-  // (kullanıcı komut verdi). Gerçekten tıklanıp tıklanmadığını döndürür.
+  // Sağlam susturma/açma: buton yazısı statik olsa bile çalışır.
+  //  - aç komutunda YALNIZCA öğrenilmiş "açık" imzasıyla eşleşiyorsa dokunmaz;
+  //    aksi halde tıklar (kapalıysa açar). Yanlışlıkla ters yöne gidersek geri alır.
+  //  - her tıklamadan sonra o durumun imzasını ÖĞRENİR → sonraki okumalar kesinleşir.
+  // "Kesin AÇIK mı?" — sadece ÖĞRENİLMİŞ imza ya da aria bayrağı güven verir.
+  // Yalın "Mute/Sustur" yazısı TEK BAŞINA güven sayılmaz (statik olabilir); bu
+  // yüzden aç komutu, açık olduğundan emin değilse tıklar → kapalıysa gerçekten açar.
+  function micConfidentLive(btn,sig){
+    if(micLiveSig&&sig===micLiveSig)return true;
+    var ap=btn.getAttribute('aria-pressed'),ac=btn.getAttribute('aria-checked');
+    return ap==='false'||ac==='false';
+  }
+  function micConfidentMuted(btn,sig){
+    if(micMutedSig&&sig===micMutedSig)return true;
+    var ap=btn.getAttribute('aria-pressed'),ac=btn.getAttribute('aria-checked');
+    if(ap==='true'||ac==='true')return true;
+    var t=normVoice(textOf(btn));
+    return /\bunmute\b|kaldir|susturmayi|sesini ac|sesi ac|mikrofonu ac|mikrofon ac/.test(t);
+  }
   function setMic(desired){
     var btn=micButton();if(!btn)return false;
-    var st=micMuteState(btn),click=false;
+    var sig=micSig(btn),st=micMuteState(btn),click;
     if(!desired||desired==='toggle')click=true;
-    else if(desired==='mute')click=(st!=='muted');
-    else if(desired==='unmute')click=(st!=='live');
-    if(click){try{btn.click();}catch(e){return false;}}
-    setTimeout(updateMicBadge,170);
+    else if(desired==='mute')click=!micConfidentMuted(btn,sig);
+    else click=!micConfidentLive(btn,sig);
+    if(click){
+      try{btn.click();}catch(e){return false;}
+      // Tıkladıktan sonra ulaşılan durumun imzasını ÖĞREN → sonraki okumalar kesinleşir.
+      setTimeout(function(){var s2=micSig(btn);if(desired==='mute')micMutedSig=s2;else if(desired==='unmute')micLiveSig=s2;updateMicBadge();},300);
+    }
     return {found:true,clicked:click,state:st};
   }
   window.__LDC_toggleMute=function(){var ok=setMic('toggle');if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return !!ok;};
@@ -754,7 +782,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     var act=mk('div',{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'15px'});
     var save=mkBtn('Kaydet',true);save.onclick=function(){set('voiceMutePhrase',(voiceMuteInp.value||'').trim()||'mikrofonu kapat');set('voiceUnmutePhrase',(voiceUnmuteInp.value||'').trim()||'mikrofonu aç');say('Sesli komutlar kaydedildi.');};
     var vrestart=mkBtn('Yeniden başlat',false);vrestart.onclick=function(){set('voiceMute','1');if(switches['voiceMute'])switches['voiceMute'].set(true);restartVoice();say('Ses tanıma yeniden başlatıldı — dinleniyor.');};
-    var vtest=mkBtn('Mikrofonu test et',false);vtest.onclick=function(){var s=micState();if(s==='unknown')say('Discord’un mikrofon düğmesi bulunamadı — bir ses kanalındayken dene.',C.warn);else say('Mikrofon düğmesi bulundu (şu an “'+(s==='live'?'açık':'kapalı')+'”). Komutlar çalışmalı.');};
+    var vtest=mkBtn('Mikrofonu test et',false);vtest.onclick=function(){var b=micButton();if(!b){say('Discord’un mikrofon düğmesi bulunamadı — bir ses kanalındayken dene.',C.warn);return;}var s=micState();var lbl=(b.getAttribute('aria-label')||b.getAttribute('title')||b.textContent||'').trim().slice(0,40);say('Buton: “'+lbl+'” · durum: '+(s==='live'?'açık':(s==='muted'?'kapalı':'bilinmiyor'))+'. Sorun sürerse bu yazıyı bana ilet.');};
     act.appendChild(save);act.appendChild(vrestart);act.appendChild(vtest);card.appendChild(act);
     card.appendChild(mk('div',{fontSize:'11px',color:C.mut,marginTop:'11px',lineHeight:'1.5'},'İpucu: bu kelimelerin doğal varyasyonlarını da anlar (ör. “mikrofonu kapatır mısın”). Cümlenin içinde geçmesi yeter.'));
     return card;
@@ -1144,7 +1172,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.17'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.18'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);

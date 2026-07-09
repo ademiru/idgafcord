@@ -527,8 +527,8 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   window.__LDC_setMute=function(v){var ok=setMic(v);if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return ok;};
 
   var voiceRec=null,voiceActive=false,voiceRestartTimer=null,voiceWatchdog=null,voiceLastAction='',voiceLastActedAt=0,voiceAlive=0;
-  var voiceStarting=false,voiceStartedAt=0,voiceFails=0;
-  var voiceHud=null,voiceHudDot=null,voiceHudTxt=null,voiceHudTimer=null;
+  var voiceStarting=false,voiceStartedAt=0,voiceFails=0,voiceHardErr=false,voiceGaveUp=false;
+  var voiceHud=null,voiceHudDot=null,voiceHudTxt=null,voiceHudTimer=null,voiceStatusEl=null;
   // Türkçe karakterleri sadeleştir + noktalama temizle → eşleştirme kolaylaşır.
   function normVoice(s){return String(s||'').toLowerCase()
     .replace(/[ıİ]/g,'i').replace(/[ğĞ]/g,'g').replace(/[üÜ]/g,'u').replace(/[şŞ]/g,'s').replace(/[öÖ]/g,'o').replace(/[çÇ]/g,'c')
@@ -611,10 +611,12 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   }
   // Devre kesici: art arda hızlı çöküşlerde ses tanımayı KAPAT ki yeniden-başlatma
   // döngüsü sayfayı boğup dondurmasın/beyaz ekran yapmasın. Üstel geri çekilme.
-  function voiceGiveUp(msg){voiceActive=false;voiceStarting=false;if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}if(voiceWatchdog){clearInterval(voiceWatchdog);voiceWatchdog=null;}voiceReleaseRec();voiceHudState('error');voiceHudFlash(msg||'Ses tanıma kapatıldı','warn');}
+  function voiceGiveUp(msg){voiceActive=false;voiceStarting=false;voiceGaveUp=true;if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}if(voiceWatchdog){clearInterval(voiceWatchdog);voiceWatchdog=null;}voiceReleaseRec();voiceHudState('error');voiceHudFlash(msg||'Ses tanıma kapatıldı','warn');updateVoiceStatus();}
   function scheduleVoiceRestart(){
     if(!voiceActive||voiceStarting||voiceRestartTimer)return;
-    var delay=Math.min(900*Math.pow(2,Math.min(voiceFails,5)),20000); // 0.9s → cap 20s
+    // Sağlıklıyken (sessizlik/normal bitiş) HIZLI yeniden başla → sürekli dinleme.
+    // Yalnızca ART ARDA SERT hatada üstel geri çekil. Tek-uçuş çakışmayı önler.
+    var delay=voiceFails>0?Math.min(1000*Math.pow(2,Math.min(voiceFails,5)),20000):350;
     voiceRestartTimer=setTimeout(function(){voiceRestartTimer=null;startVoice();},delay);
   }
   function startVoice(){
@@ -624,12 +626,12 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     voiceStarting=true;
     if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}
     voiceReleaseRec();
-    voiceActive=true;ensureVoiceHud();voiceHudState('listen');voiceAlive=Date.now();voiceStartedAt=Date.now();
+    voiceActive=true;voiceGaveUp=false;voiceHardErr=false;ensureVoiceHud();voiceHudState('listen');voiceAlive=Date.now();voiceStartedAt=Date.now();updateVoiceStatus();
     try{
-      voiceRec=new SR();voiceRec.lang='tr-TR';voiceRec.continuous=true;voiceRec.interimResults=true;voiceRec.maxAlternatives=3;
-      voiceRec.onstart=function(){voiceStarting=false;voiceStartedAt=Date.now();voiceAlive=Date.now();voiceHudState('listen');};
+      voiceRec=new SR();voiceRec.lang=get('voiceLang','tr-TR');voiceRec.continuous=true;voiceRec.interimResults=true;voiceRec.maxAlternatives=3;
+      voiceRec.onstart=function(){voiceStarting=false;voiceStartedAt=Date.now();voiceAlive=Date.now();voiceHudState('listen');updateVoiceStatus();};
       voiceRec.onresult=function(e){
-        voiceFails=0;voiceAlive=Date.now();  // çalışıyor → devre kesici sayacını sıfırla
+        voiceFails=0;voiceHardErr=false;voiceAlive=Date.now();  // çalışıyor → sayaç sıfır
         for(var i=e.resultIndex;i<e.results.length;i++){
           var res=e.results[i],acted=false;
           for(var a=0;a<res.length;a++){var t=normVoice(res[a].transcript);if(!t)continue;if(actVoice(t)){acted=true;break;}}
@@ -638,32 +640,46 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
       };
       voiceRec.onerror=function(e){
         var err=e&&e.error;
-        // İzin yoksa TEKRAR DENEME (sonsuz döngü kaynağı) — tamamen kapat.
-        if(err==='not-allowed'||err==='service-not-allowed'){voiceGiveUp('Mikrofon izni yok — ses komutu kapatıldı');say('Ses komutu için mikrofon izni gerekli.',C.warn);return;}
-        voiceHudState('idle'); // diğer hatalar: onend devralır (geri çekilmeli)
+        // İzin reddi kalıcıdır → tekrar deneme, kapat.
+        if(err==='not-allowed'){voiceGiveUp('Mikrofon izni yok — ses komutu kapatıldı');say('Ses komutu için Windows/site mikrofon izni gerekli.',C.warn);return;}
+        // 'no-speech' ve 'aborted' ZARARSIZDIR (sessizlik/normal). Yalnızca gerçek
+        // servis hataları (network, service-not-allowed, audio-capture, bad-grammar)
+        // devre kesici sayacını besler.
+        if(err&&err!=='no-speech'&&err!=='aborted')voiceHardErr=true;
+        voiceHudState('idle');
       };
       voiceRec.onend=function(){
         voiceStarting=false;voiceHudState('idle');
         if(!voiceActive)return;
-        // Kısa sürede öldüyse başarısızlık say (bozuk ortam); uzun dinlediyse sıfırla.
-        if(Date.now()-voiceStartedAt<1500)voiceFails++;else voiceFails=0;
-        if(voiceFails>=6){voiceGiveUp('Ses tanıma bu ortamda kararsız — kapatıldı. Ayarlardan tekrar açabilirsin.');return;}
+        if(voiceHardErr)voiceFails++;else voiceFails=0;  // yalnızca sert hata sayılır
+        voiceHardErr=false;
+        if(voiceFails>=8){voiceGiveUp('Ses tanıma servisi yanıt vermiyor — kapatıldı. Ayarlardan “Yeniden başlat” ile deneyebilirsin.');return;}
         scheduleVoiceRestart();
+        updateVoiceStatus();
       };
       voiceRec.start();
-      // Hafif watchdog: onend hiç gelmezse (sessiz ölüm) tek seferlik diriltme dener.
+      // Hafif watchdog: onend hiç gelmezse (sessiz ölüm) diriltme dener.
       if(!voiceWatchdog)voiceWatchdog=setInterval(function(){
-        if(voiceActive&&!voiceStarting&&!voiceRestartTimer&&(!voiceRec||Date.now()-voiceAlive>25000)){voiceFails++;if(voiceFails>=6){voiceGiveUp('Ses tanıma yanıt vermiyor — kapatıldı');return;}scheduleVoiceRestart();}
-      },8000);
+        if(voiceActive&&!voiceStarting&&!voiceRestartTimer&&(!voiceRec||Date.now()-voiceAlive>30000)){scheduleVoiceRestart();}
+      },10000);
       return true;
     }catch(e){
-      // start() zaten çalışıyorken/başarısızken hata verebilir; geri çekilerek dene.
+      // start() zaten çalışıyorken/başarısızken hata verir; sert sayıp geri çekil.
       voiceStarting=false;voiceReleaseRec();voiceFails++;
-      if(voiceFails>=6){voiceGiveUp('Ses tanıma başlatılamıyor — kapatıldı');return false;}
+      if(voiceFails>=8){voiceGiveUp('Ses tanıma başlatılamıyor — kapatıldı');return false;}
       scheduleVoiceRestart();
       return false;
     }
   }
+  // Ses komutunu manuel (yeniden) başlat: devre kesiciyi sıfırlar.
+  function restartVoice(){voiceGaveUp=false;voiceFails=0;voiceHardErr=false;if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}startVoice();}
+  function voiceStatusText(){
+    if(!ison('voiceMute','0'))return 'Kapalı';
+    if(voiceGaveUp)return 'Durdu (yeniden başlat gerekiyor)';
+    if(voiceRec&&!voiceStarting)return 'Dinleniyor';
+    return 'Başlatılıyor…';
+  }
+  function updateVoiceStatus(){if(voiceStatusEl){var s=voiceStatusText();voiceStatusEl.textContent='Durum: '+s;voiceStatusEl.style.color=(s.indexOf('Durdu')>=0)?C.warn:(s==='Dinleniyor'?C.grn:C.mut);}}
 
   /* ---------------- Ayar paneli (CSSOM, IPC yok) ---------------- */
   var GEAR='<svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.9 4.6l1.9 1.5-1.9 3.3-2.3-.9c-.4.4-.9.6-1.4.9l-.3 2.4H9.2l-.3-2.4c-.5-.3-1-.5-1.4-.9l-2.3.9L3.3 14.1l1.9-1.5c0-.2-.1-.4-.1-.6s.1-.4.1-.6L3.3 9.9l1.9-3.3 2.3.9c.4-.4.9-.6 1.4-.9L9.2 4h4.6l.3 2.4c.5.3 1 .5 1.4.9l2.3-.9 1.9 3.3-1.9 1.5c0 .2.1.4.1.6s-.1.4 0 .8z"/></svg>';
@@ -802,7 +818,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     w.onclick=function(){w._c=!w._c;r();cb(w._c);};w.set=function(v){w._c=!!v;r();};return w;
   }
   function onToggle(k,v){set(k,v?'1':'0');applyAll();say('Kaydedildi.');}
-  function onVoiceToggle(v){set('voiceMute',v?'1':'0');if(v)startVoice();else{stopVoice();say('Ses komutu kapatıldı.');}}
+  function onVoiceToggle(v){set('voiceMute',v?'1':'0');if(v){voiceGaveUp=false;voiceFails=0;voiceHardErr=false;startVoice();say('Ses komutu açıldı — dinleniyor.');}else{stopVoice();say('Ses komutu kapatıldı.');}updateVoiceStatus();}
   function nativeCmd(action,key,value){
     var u='idgafcord://native?action='+encodeURIComponent(action||'');
     if(key)u+='&key='+encodeURIComponent(key);
@@ -965,10 +981,14 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     vhelp.appendChild(mk('div',{fontSize:'12px',color:C.hl,fontWeight:'600',marginBottom:'5px'},'Anlaşılan örnek komutlar'));
     var vex=[['Kapat','“mikrofonu kapat”, “sustur”, “beni sustur”, “sesi kapat”'],['Aç','“mikrofonu aç”, “sesimi aç”, “geri aç”'],['Değiştir','“mikrofonu değiştir”']];
     vex.forEach(function(p){var r=mk('div',{display:'flex',gap:'8px',fontSize:'12px',color:'#b5bac1',lineHeight:'1.5'});r.appendChild(mk('span',{color:C.mut,fontWeight:'700',minWidth:'62px'},p[0]));r.appendChild(mk('span',{},p[1]));vhelp.appendChild(r);});
-    var vtestRow=mk('div',{display:'flex',alignItems:'center',gap:'10px',marginTop:'9px'});
+    voiceStatusEl=mk('div',{fontSize:'12px',color:C.mut,fontWeight:'600',marginTop:'9px'},'Durum: '+voiceStatusText());updateVoiceStatus();
+    vhelp.appendChild(voiceStatusEl);
+    var vtestRow=mk('div',{display:'flex',alignItems:'center',flexWrap:'wrap',gap:'8px',marginTop:'8px'});
+    var vrestart=mkBtn('Ses tanımayı yeniden başlat',true);
+    vrestart.onclick=function(){set('voiceMute','1');if(switches['voiceMute'])switches['voiceMute'].set(true);restartVoice();say('Ses tanıma yeniden başlatıldı — dinleniyor.');};
     var vtest=mkBtn('Mikrofon düğmesini test et',false);
     vtest.onclick=function(){var s=micState();if(s==='unknown'){say('Discord’un mikrofon düğmesi bulunamadı — bir ses kanalına bağlıyken dene.',C.warn);}else{say('Mikrofon düğmesi bulundu: durum “'+(s==='live'?'açık':'kapalı')+'”. Komutlar çalışmalı.');}};
-    vtestRow.appendChild(vtest);vhelp.appendChild(vtestRow);
+    vtestRow.appendChild(vrestart);vtestRow.appendChild(vtest);vhelp.appendChild(vtestRow);
     body.appendChild(vhelp);
     var upRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var upTxt=mk('div',{flex:'1'});upTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Güncellemeleri denetle'));
@@ -1067,7 +1087,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.13'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.14'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
@@ -1094,7 +1114,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(voiceMuteInp)voiceMuteInp.value=get('voiceMutePhrase','mikrofonu kapat');
     if(voiceUnmuteInp)voiceUnmuteInp.value=get('voiceUnmutePhrase','mikrofonu aç');
     if(footEl&&footEl._b)footEl._b.textContent=blockedCount+' istek engellendi';
-    ensureMicBadge();
+    ensureMicBadge();updateVoiceStatus();
     if(modal){var b=modal.querySelector('#ldc-modal-body');if(b)applyTabs(b);}
   }
   function openPanel(){build();nativeCmd('sync');if(modal){modal.style.display='flex';refresh();renderTerm();if(termTimer)clearInterval(termTimer);termTimer=setInterval(renderTerm,1000);}}

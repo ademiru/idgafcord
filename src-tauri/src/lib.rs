@@ -567,13 +567,49 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(termSumEl){var parts=[];for(var k in catCount)parts.push('<span class="k-'+k+'">'+k+'</span> '+catCount[k]);termSumEl.innerHTML='<b>'+blockedCount+'</b> istek engellendi · bugün <b>'+get('blockedToday','0')+'</b>'+(parts.length?'<br>'+parts.sort().join('&nbsp;&nbsp; '):'');}
   }
   function mkPills(opts,cur,cb){
-    var wrap=mk('div',{display:'flex',flexWrap:'wrap',gap:'6px',marginTop:'2px'});var btns={};
+    // Segment kontrolü: iç arka planlı kapsül; seçili öğe aksan dolgulu.
+    var wrap=mk('div',{display:'inline-flex',flexWrap:'wrap',gap:'4px',marginTop:'2px',padding:'4px',background:C.field,border:'1px solid '+C.line,borderRadius:'11px'});var btns={};
     opts.forEach(function(o){
-      var b=mk('div',{padding:'7px 13px',borderRadius:'8px',fontSize:'13px',fontWeight:'500',cursor:'pointer',background:C.field,color:C.mut,transition:'background .12s,color .12s'},o.l);
-      b.onclick=function(){wrap._v=o.v;render();cb(o.v);};btns[o.v]=b;wrap.appendChild(b);
+      var b=mk('div',{padding:'7px 14px',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',background:'transparent',color:C.mut,transition:'background .13s,color .13s,box-shadow .13s'},o.l);
+      b.onclick=function(){wrap._v=o.v;render();cb(o.v);};
+      b.onmouseenter=function(){if(wrap._v!==o.v)b.style.color=C.hl;};
+      b.onmouseleave=function(){if(wrap._v!==o.v)b.style.color=C.mut;};
+      btns[o.v]=b;wrap.appendChild(b);
     });
-    wrap._v=cur;function render(){for(var k in btns){var on=k===wrap._v;btns[k].style.background=on?C.acc:C.field;btns[k].style.color=on?'#fff':C.mut;}}
+    wrap._v=cur;function render(){for(var k in btns){var on=k===wrap._v;btns[k].style.background=on?C.acc:'transparent';btns[k].style.color=on?'#fff':C.mut;btns[k].style.boxShadow=on?'0 2px 8px rgba(88,101,242,.4)':'none';}}
     wrap.set=function(v){wrap._v=v;render();};render();return wrap;
+  }
+  // Tema önizleme renkleri: [derin zemin, yüzey, aksan] — kart swatch'ında kullanılır.
+  var THEME_SW={
+    off:['#2b2d31','#3a3c41','#5865f2'],idgaf:['#120000','#340707','#d80f12'],
+    midnight:['#09090c','#1c1c20','#5865f2'],space:['#070912','#181d38','#7c5cff'],
+    dracula:['#21222c','#3c4055','#bd93f9'],nord:['#2e3440','#434c5e','#88c0d0'],
+    catppuccin:['#181825','#363a4f','#cba6f7'],amoled:['#000000','#141414','#5865f2'],
+    tokyonight:['#1a1b26','#2a2e42','#7aa2f7'],gruvbox:['#282828','#45403d','#fabd2f'],
+    solarized:['#002b36','#0f5265','#268bd2'],rosepine:['#191724','#2a2740','#ebbcba'],
+    synthwave:['#190833','#331466','#ff2e97'],monokai:['#272822','#3a3b33','#f92672']
+  };
+  function mkThemePicker(cur,cb){
+    var grid=mk('div',{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(102px,1fr))',gap:'8px',marginTop:'6px'});
+    var cards={};
+    THEME_OPTS.forEach(function(o){
+      var sw=THEME_SW[o.v]||['#2b2d31','#3a3c41','#5865f2'];
+      var card=mk('div',{position:'relative',cursor:'pointer',borderRadius:'11px',overflow:'hidden',border:'2px solid transparent',background:C.field,transition:'border-color .14s,transform .14s,box-shadow .14s'});
+      var prev=mk('div',{position:'relative',height:'48px',background:sw[0]});
+      prev.appendChild(mk('div',{position:'absolute',top:'9px',left:'9px',width:'15px',height:'15px',borderRadius:'50%',background:sw[2],boxShadow:'0 0 0 2px rgba(0,0,0,.3)'}));
+      prev.appendChild(mk('div',{position:'absolute',left:'9px',right:'22px',bottom:'9px',height:'7px',borderRadius:'4px',background:sw[1]}));
+      var check=mk('div',{position:'absolute',top:'7px',right:'7px',width:'19px',height:'19px',borderRadius:'50%',background:C.acc,display:'none',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 4px rgba(0,0,0,.4)'});
+      check.innerHTML='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      var label=mk('div',{padding:'7px 10px',fontSize:'12px',fontWeight:'600',color:C.hl,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},o.l);
+      card.appendChild(prev);card.appendChild(check);card.appendChild(label);
+      card.onclick=function(){grid._v=o.v;render();cb(o.v);};
+      card.onmouseenter=function(){if(grid._v!==o.v){card.style.borderColor=C.line2;card.style.transform='translateY(-1px)';}};
+      card.onmouseleave=function(){if(grid._v!==o.v){card.style.borderColor='transparent';card.style.transform='none';}};
+      cards[o.v]={card:card,check:check};grid.appendChild(card);
+    });
+    grid._v=cur;
+    function render(){for(var k in cards){var on=k===grid._v;cards[k].card.style.borderColor=on?C.acc:'transparent';cards[k].card.style.transform=on?'translateY(-1px)':'none';cards[k].card.style.boxShadow=on?'0 6px 16px rgba(0,0,0,.32)':'none';cards[k].check.style.display=on?'flex':'none';}}
+    grid.set=function(v){grid._v=v;render();};render();return grid;
   }
   function mkRow(title,desc,ctrl){
     var row=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
@@ -818,7 +854,8 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     trow.appendChild(termSumEl);trow.appendChild(termClr);body.appendChild(trow);
 
     body.appendChild(sec('Tema'));
-    themePills=mkPills(THEME_OPTS,get('theme','off'),function(v){set('theme',v);applyAll();say(v==='off'?'Tema kapatıldı.':'Tema: '+v);});
+    body.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',lineHeight:'1.4',margin:'2px 0 2px'},'Renk önizlemesine dokunarak seç. Aksan rengini aşağıdan ayrıca değiştirebilirsin.'));
+    themePills=mkThemePicker(get('theme','off'),function(v){set('theme',v);applyAll();say(v==='off'?'Tema kapatıldı.':'Tema: '+v);});
     body.appendChild(themePills);
 
     body.appendChild(sec('Aksan rengi'));
@@ -895,7 +932,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.9'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.10'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);

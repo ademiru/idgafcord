@@ -269,6 +269,10 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   function get(k,def){try{var v=LS.getItem('ldc_'+k);return v===null?def:v;}catch(e){return def;}}
   function set(k,v){try{LS.setItem('ldc_'+k,v);}catch(e){}}
   function ison(k,def){return get(k,def)==='1';}
+  // Güvenli mod: Discord render olmadıysa (beyaz/siyah ekran) bu oturumda tema,
+  // özel CSS ve telemetri engellemesi UYGULANMAZ. Ayarlar localStorage'da korunur;
+  // yalnızca bu oturum temiz çalışır. Uygulama yeniden açılınca normale döner.
+  var SAFE=false;try{SAFE=sessionStorage.getItem('ldc_safe')==='1';}catch(e){}
 
   /* ---------------- Telemetri engelleyici (kategorili + loglu) ---------------- */
   var blockedCount=0,blockedLog=[],catCount={};
@@ -277,11 +281,13 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     {re:/sentry/i,c:'SENTRY'},{re:/\/api\/v\d+\/applications\/\d+\/analytics/,c:'ANALYTICS'},
     {re:/error-reporting/i,c:'ERROR'},{re:/crash-reporting/i,c:'CRASH'},{re:/\/rtc\/quality/i,c:'RTC-QoS'},
     {re:/\/api\/v\d+\/reporting/,c:'REPORTING'},{re:/segment\.(io|com)/i,c:'SEGMENT'},
-    {re:/google-analytics/i,c:'GA'},{re:/doubleclick/i,c:'ADS'},{re:/\/experiments\b/,c:'EXPERIMENTS'}
+    {re:/google-analytics/i,c:'GA'},{re:/doubleclick/i,c:'ADS'}
   ];
   function pushLog(cat,u){blockedCount++;catCount[cat]=(catCount[cat]||0)+1;var d=new Date().toISOString().slice(0,10);if(get('blockedDay','')!==d){set('blockedDay',d);set('blockedToday','0');}set('blockedToday',String((parseInt(get('blockedToday','0'),10)||0)+1));blockedLog.push({t:Date.now(),c:cat,u:String(u).replace(/^https?:\/\//,'').split('?')[0].slice(0,90)});if(blockedLog.length>500)blockedLog.shift();}
-  function blocked(u){if(!ison('block','1')||!u)return false;try{u=String(u);}catch(e){return false;}for(var i=0;i<PAT.length;i++){if(PAT[i].re.test(u)){pushLog(PAT[i].c,u);return true;}}return false;}
-  var of=window.fetch;window.fetch=function(input,init){var u=typeof input==='string'?input:(input&&input.url)||'';if(blocked(u))return Promise.resolve(new Response('',{status:204}));return of.apply(this,arguments);};
+  function blocked(u){if(SAFE||!ison('block','1')||!u)return false;try{u=String(u);}catch(e){return false;}for(var i=0;i<PAT.length;i++){if(PAT[i].re.test(u)){pushLog(PAT[i].c,u);return true;}}return false;}
+  // Engellenen isteğe BOŞ değil, geçerli boş-JSON döndür: bir yanıt .json()'lanırsa
+  // Discord'un bootstrap'ı SyntaxError ile çökmesin (beyaz ekran koruması).
+  var of=window.fetch;window.fetch=function(input,init){var u=typeof input==='string'?input:(input&&input.url)||'';if(blocked(u))return Promise.resolve(new Response('{}',{status:200,headers:{'Content-Type':'application/json'}}));return of.apply(this,arguments);};
   var oo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__ldc=u;return oo.apply(this,arguments);};
   var os=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(blocked(this.__ldc)){try{this.abort();}catch(e){}return;}return os.apply(this,arguments);};
   if(navigator.sendBeacon){var ob=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){if(blocked(u))return true;return ob(u,d);};}
@@ -416,7 +422,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   var themeSt=new Styler(),accentSt=new Styler(),uiSt=new Styler(),structSt=new Styler(),starsSt=new Styler(),bgSt=new Styler(),upSt=new Styler(),cssSt=new Styler(),panelSt=new Styler();
   panelSt.set(TERM_CSS+SPLASH_CSS+VOICE_CSS);
   function splash(){try{
-    if(!ison('splash','1')||document.getElementById('ldc-splash'))return;
+    if(SAFE||!ison('splash','1')||document.getElementById('ldc-splash'))return;
     var host=document.body||document.documentElement;if(!host)return;
     var s=document.createElement('div');s.id='ldc-splash';
     s.innerHTML='<div class="ldc-sp-wrap"><img class="ldc-sp-mark" src="'+LDC_LOGO_DATA_URI+'" alt=""><div class="ldc-sp-logo"><b>idgaf</b>cord</div><div class="ldc-sp-line"></div><div class="ldc-sp-tag">I DON’T GIVE A FUCK ABOUT YOUR DATA</div></div>';
@@ -425,6 +431,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},2900);
   }catch(e){}}
   function applyAll(){
+    if(SAFE){themeSt.set('');accentSt.set('');uiSt.set('');structSt.set('');starsSt.set('');bgSt.set('');upSt.set('');cssSt.set('');return;}
     themeSt.set(THEMES[get('theme','off')]||'');
     var ac=get('accent','');accentSt.set(ac?BASE_SEL+'{'+accentVars(ac)+'}':'');
     uiSt.set(uiCSS());
@@ -453,6 +460,29 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   window.addEventListener('offline',showLoadIssue);
   window.addEventListener('online',function(){var e=document.getElementById('ldc-load-issue');if(e&&e.parentNode)e.parentNode.removeChild(e);});
   setTimeout(function(){var ok=document.querySelector('[class*="app_"],[class*="layers_"],[data-list-id="guildsnav"]');if(!ok&&location.hostname.indexOf('discord.com')>=0)showLoadIssue();},14000);
+
+  // Discord render oldu mu? (beyaz/siyah ekran yakalayıcı)
+  function ldcRendered(){return !!document.querySelector('[class*="app_"],[class*="appMount"],[class*="appAsidePanelWrapper"],[class*="base_"],[class*="layers_"],[class*="sidebarList"],[data-list-id="guildsnav"]');}
+  function ldcSafeNotice(){
+    if(document.getElementById('ldc-safe-note'))return;
+    var host=document.body||document.documentElement;if(!host)return;
+    var b=mk('div',{position:'fixed',left:'12px',bottom:'12px',zIndex:'2147482996',maxWidth:'330px',padding:'11px 13px',borderRadius:'10px',background:'rgba(35,37,42,.97)',border:'1px solid rgba(240,178,50,.55)',color:'#f2f3f5',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",fontSize:'12px',lineHeight:'1.45',boxShadow:'0 14px 38px rgba(0,0,0,.45)'});
+    b.id='ldc-safe-note';
+    b.innerHTML='<div style="font-weight:800;margin-bottom:3px">Güvenli mod</div>Discord yüklenemediği için tema, özel CSS ve engelleme bu oturumda geçici kapatıldı. <b>Ayarların korundu.</b> Uygulamayı yeniden başlatınca normale döner.';
+    host.appendChild(b);
+  }
+  // Discord ~13 sn içinde çizilmezse: ilk seferde bizim müdahalelerimizi bu oturum
+  // için kapatıp BİR KEZ yeniden yükle (döngü koruması: sessionStorage bayrağı).
+  function ldcRenderCheck(){
+    try{
+      if(location.hostname.indexOf('discord.com')<0||ldcRendered())return;
+      if(SAFE){ldcSafeNotice();return;}
+      try{sessionStorage.setItem('ldc_safe','1');}catch(e){}
+      location.reload();
+    }catch(e){}
+  }
+  setTimeout(ldcRenderCheck,13000);
+  if(SAFE)setTimeout(function(){if(!ldcRendered())ldcSafeNotice();},2000);
 
   function textOf(el){return ((el&&((el.getAttribute('aria-label')||'')+' '+(el.getAttribute('title')||'')+' '+(el.textContent||'')))||'').toLowerCase();}
   function visible(el){var r=el.getBoundingClientRect();return r.width>8&&r.height>8&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;}

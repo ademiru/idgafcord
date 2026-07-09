@@ -21,7 +21,8 @@ Tepsi menüsü sadeleştirildi: **Göster / Ayarlar / Çıkış** (sol tık = pe
   düzenleyebilirsiniz.
 - **Önbelleği temizle** ve **okunmamış rozeti** (görev çubuğu + tepsi ipucu).
 - **Küresel kısayol**: `Ctrl/Cmd+Shift+M` ile mikrofonu sustur.
-- **Otomatik güncelleme** (aşağıdaki kuruluma bakın).
+- **Otomatik güncelleme kontrolü**: Tepsi menüsündeki seçenek açıkken başlangıçta
+  ve arka planda periyodik olarak yeni sürümü denetler.
 
 ## Geliştirme
 

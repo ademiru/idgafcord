@@ -13,6 +13,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -35,8 +36,14 @@ struct Settings {
     autostart: bool,
     start_minimized: bool,
     disable_gpu: bool,
+    #[serde(default = "default_true")]
+    auto_update_check: bool,
     #[serde(default)]
     game_mode: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -46,6 +53,7 @@ impl Default for Settings {
             autostart: false,
             start_minimized: false,
             disable_gpu: false,
+            auto_update_check: true,
             game_mode: false,
         }
     }
@@ -110,6 +118,30 @@ fn save_settings<R: Runtime>(app: &AppHandle<R>, settings: &Settings) {
             let _ = fs::write(dir.join("settings.json"), json);
         }
     }
+}
+
+fn spawn_update_check<R: Runtime>(app: AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        if let Ok(updater) = app.updater() {
+            if let Ok(Some(update)) = updater.check().await {
+                let _ = update.download_and_install(|_, _| {}, || {}).await;
+                app.restart();
+            }
+        }
+    });
+}
+
+fn spawn_auto_update_loop<R: Runtime>(app: AppHandle<R>) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(6 * 60 * 60));
+        let enabled = app
+            .try_state::<Mutex<Settings>>()
+            .and_then(|s| s.lock().ok().map(|s| s.auto_update_check))
+            .unwrap_or(false);
+        if enabled {
+            spawn_update_check(app.clone());
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -479,7 +511,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.0'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.1'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
@@ -602,6 +634,12 @@ pub fn run() {
             let i_game = CheckMenuItemBuilder::with_id("t_game", "Oyun modu: tepsideyken askıya al (bildirimler durur)")
                 .checked(settings.game_mode)
                 .build(app)?;
+            let i_auto_update = CheckMenuItemBuilder::with_id(
+                "t_auto_update",
+                "Güncellemeleri otomatik denetle",
+            )
+            .checked(settings.auto_update_check)
+            .build(app)?;
             let i_settings = MenuItemBuilder::with_id("settings", "Ayarlar (tema, gizlilik)").build(app)?;
             let i_cache = MenuItemBuilder::with_id("clear_cache", "Önbelleği temizle").build(app)?;
             let i_update = MenuItemBuilder::with_id("check_update", "Güncellemeleri denetle").build(app)?;
@@ -611,7 +649,7 @@ pub fn run() {
             let menu = MenuBuilder::new(app)
                 .items(&[&i_tray, &i_startmin, &i_autostart, &i_gpu, &i_game])
                 .separator()
-                .items(&[&i_settings, &i_cache, &i_update])
+                .items(&[&i_settings, &i_auto_update, &i_cache, &i_update])
                 .separator()
                 .items(&[&i_show, &i_quit])
                 .build()?;
@@ -621,8 +659,14 @@ pub fn run() {
             let c_autostart = i_autostart.clone();
             let c_gpu = i_gpu.clone();
             let c_game = i_game.clone();
+            let c_auto_update = i_auto_update.clone();
+            let check_on_start = settings.auto_update_check;
 
             app.manage(Mutex::new(settings));
+            spawn_auto_update_loop(handle.clone());
+            if check_on_start {
+                spawn_update_check(handle.clone());
+            }
 
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
@@ -664,6 +708,18 @@ pub fn run() {
                             let _ = c_game.set_checked(s.game_mode);
                             save_settings(app, &s);
                         }
+                        "t_auto_update" => {
+                            let enabled = {
+                                let mut s = state.lock().unwrap();
+                                s.auto_update_check = !s.auto_update_check;
+                                let _ = c_auto_update.set_checked(s.auto_update_check);
+                                save_settings(app, &s);
+                                s.auto_update_check
+                            };
+                            if enabled {
+                                spawn_update_check(app.clone());
+                            }
+                        }
                         "settings" => {
                             ensure_loaded(app);
                             set_render(app, true);
@@ -679,15 +735,7 @@ pub fn run() {
                             }
                         }
                         "check_update" => {
-                            let app2 = app.clone();
-                            tauri::async_runtime::spawn(async move {
-                                if let Ok(updater) = app2.updater() {
-                                    if let Ok(Some(update)) = updater.check().await {
-                                        let _ = update.download_and_install(|_, _| {}, || {}).await;
-                                        app2.restart();
-                                    }
-                                }
-                            });
+                            spawn_update_check(app.clone());
                         }
                         "show" => {
                             ensure_loaded(app);

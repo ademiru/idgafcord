@@ -7,8 +7,10 @@ uygulamaya gömülüdür:
 https://github.com/ademiru/idgafcord/releases/latest/download/latest.json
 ```
 
-Uygulama açılışta değil, **tepsi menüsü → "Güncellemeleri denetle"** ile kontrol
-eder; yeni sürüm varsa indirir, kurar ve yeniden başlatır.
+Uygulama, **tepsi menüsü → "Güncellemeleri otomatik denetle"** seçeneği açıkken
+başlangıçta ve 6 saatte bir kontrol eder; yeni sürüm varsa indirir, kurar ve
+yeniden başlatır. Aynı menüdeki **"Güncellemeleri denetle"** komutu manuel
+kontrol için durur.
 
 ---
 
@@ -61,7 +63,8 @@ Her yeni sürümde:
      - `idgafcord_0.1.1_x64-portable.zip`
      - `latest.json`
    - **Publish release**.
-4. Bitti. Kullanıcılar "Güncellemeleri denetle" deyince yeni sürümü alır.
+4. Bitti. Otomatik kontrol açık kullanıcılar yeni sürümü arka planda alır;
+   isteyen kullanıcılar "Güncellemeleri denetle" komutuyla elle de kontrol eder.
 
 > Neden `latest.json`? Uygulama önce bu dosyayı okur; içinde en yeni sürüm
 > numarası, imza ve kurulum dosyasının indirme linki vardır. `latest.json`'daki

@@ -34,7 +34,7 @@ Hafif, sade ve gizlilik odaklı Discord masaustu istemcisi.
 - Sagdaki uye listesini gizleyip daha fazla alan acabilir.
 - Donanim hizlandirmayi kapatarak kaynak kullanimini azaltabilir.
 - Oyun modunda tepsideyken Discord'u askida tutabilir.
-- Mikrofonu global kisayolla hizli susturabilir.
+- Mikrofonu kendi sectigin global kisayolla hizli susturabilir.
 
 ## Ayarlar
 

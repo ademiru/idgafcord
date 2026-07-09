@@ -22,7 +22,9 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::webview::WebviewWindowBuilder;
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl};
 
+use std::str::FromStr;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_updater::UpdaterExt;
 
 // ---------------------------------------------------------------------------
@@ -40,10 +42,16 @@ struct Settings {
     auto_update_check: bool,
     #[serde(default)]
     game_mode: bool,
+    #[serde(default = "default_mute_shortcut")]
+    mute_shortcut: String,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_mute_shortcut() -> String {
+    "CommandOrControl+Shift+M".into()
 }
 
 impl Default for Settings {
@@ -55,6 +63,7 @@ impl Default for Settings {
             disable_gpu: false,
             auto_update_check: true,
             game_mode: false,
+            mute_shortcut: default_mute_shortcut(),
         }
     }
 }
@@ -138,10 +147,19 @@ fn sync_native_settings<R: Runtime>(app: &AppHandle<R>) {
         "disable_gpu": settings.disable_gpu,
         "game_mode": settings.game_mode,
         "auto_update_check": settings.auto_update_check,
+        "mute_shortcut": settings.mute_shortcut,
     });
     let _ = w.eval(&format!(
         "window.__LDC_setNativeSettings&&window.__LDC_setNativeSettings({payload});"
     ));
+}
+
+fn register_mute_shortcut<R: Runtime>(app: &AppHandle<R>, shortcut: &str) -> bool {
+    let Ok(shortcut) = Shortcut::from_str(shortcut) else {
+        return false;
+    };
+    let _ = app.global_shortcut().unregister_all();
+    app.global_shortcut().register(shortcut).is_ok()
 }
 
 fn spawn_update_check<R: Runtime>(app: AppHandle<R>) {
@@ -362,8 +380,8 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   function st(el,o){for(var k in o){el.style[k]=o[k];}return el;}
   function mk(tag,o,txt){var e=document.createElement(tag);if(o)st(e,o);if(txt!=null)e.textContent=txt;return e;}
   function hover(el,a,b){el.addEventListener('mouseenter',function(){el.style.background=b;});el.addEventListener('mouseleave',function(){el.style.background=a;});}
-  var statusEl,themeEl,modal,footEl,switches={},nativeSwitches={},themePills,accentInp,fontRange,fontVal,bgInp,termEl,termSumEl,termTimer=null,radiusPills,logoInp,fontInp;
-  var nativeState={minimize_to_tray:true,start_minimized:false,autostart:false,disable_gpu:false,game_mode:false,auto_update_check:true};
+  var statusEl,themeEl,modal,footEl,switches={},nativeSwitches={},themePills,accentInp,fontRange,fontVal,bgInp,termEl,termSumEl,termTimer=null,radiusPills,logoInp,fontInp,muteShortcutText;
+  var nativeState={minimize_to_tray:true,start_minimized:false,autostart:false,disable_gpu:false,game_mode:false,auto_update_check:true,mute_shortcut:'CommandOrControl+Shift+M'};
   function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':'&gt;';});}
   function fmtTime(t){var d=new Date(t),p=function(n){return(n<10?'0':'')+n;};return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
   function shortUrl(u){return String(u).replace(/^[^/]*\//,'/').split('?')[0].slice(0,52);}
@@ -416,9 +434,44 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     nativeSwitches[key]=sw;
     return mkRow(title,desc,sw);
   }
+  function shortcutLabel(s){return String(s||'CommandOrControl+Shift+M').replace('CommandOrControl','Ctrl/Cmd').replace(/\+/g,' + ');}
+  function updateShortcutText(){if(muteShortcutText)muteShortcutText.textContent=shortcutLabel(nativeState.mute_shortcut);}
+  function eventShortcut(e){
+    var key='';
+    if(/^Key[A-Z]$/.test(e.code))key=e.code.slice(3);
+    else if(/^Digit[0-9]$/.test(e.code))key=e.code.slice(5);
+    else if(/^F([1-9]|1[0-9]|2[0-4])$/.test(e.code))key=e.code;
+    else {
+      var map={Space:'Space',Enter:'Enter',Tab:'Tab',Escape:'Escape',Backspace:'Backspace',Delete:'Delete',Insert:'Insert',Home:'Home',End:'End',PageUp:'PageUp',PageDown:'PageDown',ArrowUp:'ArrowUp',ArrowDown:'ArrowDown',ArrowLeft:'ArrowLeft',ArrowRight:'ArrowRight'};
+      key=map[e.code]||'';
+    }
+    if(!key||['Shift','Control','Alt','Meta'].indexOf(e.key)>=0)return '';
+    var p=[];
+    if(e.ctrlKey||e.metaKey)p.push('CommandOrControl');
+    if(e.altKey)p.push('Alt');
+    if(e.shiftKey)p.push('Shift');
+    if(!p.length)return '';
+    p.push(key);
+    return p.join('+');
+  }
+  function startShortcutCapture(btn){
+    btn.textContent='Tuşlara bas...';
+    say('Yeni kısayol için bir kombinasyon bas.');
+    function done(e){
+      e.preventDefault();e.stopPropagation();
+      var combo=eventShortcut(e);
+      document.removeEventListener('keydown',done,true);
+      btn.textContent='Ata';
+      if(!combo){say('En az Ctrl, Alt veya Shift ile birlikte bir tuş seç.',C.warn);return;}
+      nativeCmd('set_shortcut','mute_shortcut',combo);
+      say('Kısayol kaydediliyor: '+shortcutLabel(combo));
+    }
+    setTimeout(function(){document.addEventListener('keydown',done,true);},30);
+  }
   window.__LDC_setNativeSettings=function(s){
     nativeState=s||nativeState;
     for(var k in nativeSwitches){if(k in nativeState)nativeSwitches[k].set(!!nativeState[k]);}
+    updateShortcutText();
   };
 
   function build(){try{
@@ -470,6 +523,12 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     body.appendChild(nativeRow('autostart','Windows ile başlat','Windows açıldığında idgafcord otomatik başlatılır.'));
     body.appendChild(nativeRow('start_minimized','Tepside sessiz başlat','Otomatik başlatmada pencere açmadan doğrudan tepside bekler.'));
     body.appendChild(nativeRow('auto_update_check','Güncellemeleri otomatik denetle','Başlangıçta ve 6 saatte bir yeni imzalı sürümü kontrol eder.'));
+    var muteRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
+    var muteTxt=mk('div',{flex:'1'});muteTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Mikrofon susturma kısayolu'));
+    muteShortcutText=mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},shortcutLabel(nativeState.mute_shortcut));
+    muteTxt.appendChild(muteShortcutText);
+    var muteBtn=mkBtn('Ata',true);muteBtn.onclick=function(){startShortcutCapture(muteBtn);};
+    muteRow.appendChild(muteTxt);muteRow.appendChild(muteBtn);body.appendChild(muteRow);
     var upRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var upTxt=mk('div',{flex:'1'});upTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Güncellemeleri denetle'));
     upTxt.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},'Şimdi GitHub Releases üzerinden yeni sürüm var mı kontrol eder.'));
@@ -564,7 +623,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.2'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.3'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
@@ -622,9 +681,6 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            use std::str::FromStr;
-            use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
-
             let handle = app.handle().clone();
             let mut settings = load_settings(&handle);
 
@@ -688,6 +744,7 @@ pub fn run() {
             let check_on_start = settings.auto_update_check;
             let disable_gpu = settings.disable_gpu;
             let start_minimized = settings.start_minimized;
+            let mute_shortcut = settings.mute_shortcut.clone();
 
             app.manage(Mutex::new(settings));
 
@@ -780,6 +837,19 @@ pub fn run() {
                             spawn_update_check(nav_handle.clone());
                         }
                     }
+                    "set_shortcut" => {
+                        let candidate = value.trim().to_string();
+                        if !candidate.is_empty() && register_mute_shortcut(&nav_handle, &candidate)
+                        {
+                            if let Some(state) = nav_handle.try_state::<Mutex<Settings>>() {
+                                if let Ok(mut s) = state.lock() {
+                                    s.mute_shortcut = candidate;
+                                    save_settings(&nav_handle, &s);
+                                }
+                            }
+                        }
+                        sync_native_settings(&nav_handle);
+                    }
                     _ => {}
                 }
                 false
@@ -794,8 +864,16 @@ pub fn run() {
             }
             let _window = builder.build()?;
 
-            if let Ok(shortcut) = Shortcut::from_str("CommandOrControl+Shift+M") {
-                let _ = app.global_shortcut().register(shortcut);
+            if !register_mute_shortcut(&handle, &mute_shortcut) {
+                let fallback = default_mute_shortcut();
+                if register_mute_shortcut(&handle, &fallback) {
+                    if let Some(state) = handle.try_state::<Mutex<Settings>>() {
+                        if let Ok(mut s) = state.lock() {
+                            s.mute_shortcut = fallback;
+                            save_settings(&handle, &s);
+                        }
+                    }
+                }
             }
 
             spawn_auto_update_loop(handle.clone());

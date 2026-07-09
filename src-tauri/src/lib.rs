@@ -368,6 +368,71 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   document.addEventListener('DOMContentLoaded',applyAll);
   splash();document.addEventListener('DOMContentLoaded',splash);
 
+  function textOf(el){return ((el&&((el.getAttribute('aria-label')||'')+' '+(el.getAttribute('title')||'')+' '+(el.textContent||'')))||'').toLowerCase();}
+  function visible(el){var r=el.getBoundingClientRect();return r.width>8&&r.height>8&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;}
+  function micButton(){
+    var nodes=Array.prototype.slice.call(document.querySelectorAll('button,[role="button"],[aria-label]'));
+    var best=null,bestScore=-1;
+    nodes.forEach(function(el){
+      if(!visible(el))return;
+      var t=textOf(el),score=0;
+      if(!t)return;
+      if(/microphone|mic|mikrofon/.test(t))score+=80;
+      if(/(^|\s)(mute|unmute)(\s|$)|sustur|sessiz|sesini aç|sesi aç|kapat|aç/.test(t))score+=35;
+      if(/deafen|kulak|sağır|sagir|bildirim|notification|channel|server|sunucu|kanal|soundboard/.test(t))score-=80;
+      var r=el.getBoundingClientRect();
+      if(r.left<430&&r.top>innerHeight-210)score+=60;
+      if(el.tagName==='BUTTON')score+=8;
+      if(score>bestScore){bestScore=score;best=el;}
+    });
+    return bestScore>25?best:null;
+  }
+  function micAction(btn){
+    var t=textOf(btn);
+    if(/unmute|sesini aç|sesi aç|mikrofonu aç|mikrofon aç|aç/.test(t))return 'unmute';
+    if(/mute|sustur|sessiz|mikrofonu kapat|mikrofon kapat|kapat/.test(t))return 'mute';
+    return 'toggle';
+  }
+  function setMic(desired){
+    var btn=micButton();
+    if(!btn)return false;
+    var action=micAction(btn);
+    if(!desired||desired==='toggle'||action==='toggle'||desired===action){
+      btn.click();
+    }
+    return true;
+  }
+  window.__LDC_toggleMute=function(){var ok=setMic('toggle');if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return ok;};
+  window.__LDC_setMute=function(v){var ok=setMic(v);if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return ok;};
+
+  var voiceRec=null,voiceActive=false,voiceRestartTimer=null;
+  function normVoice(s){return String(s||'').toLowerCase().replace(/[ıİ]/g,'i').replace(/[ğĞ]/g,'g').replace(/[üÜ]/g,'u').replace(/[şŞ]/g,'s').replace(/[öÖ]/g,'o').replace(/[çÇ]/g,'c');}
+  function handleVoice(s){
+    var t=normVoice(s);
+    if(/(mikrofon|ses|unmute).*(ac|aç)|sesle ac|unmute\b/.test(t)){setMic('unmute');say('Ses komutu: mikrofon açıldı.');return true;}
+    if(/(mikrofon|ses|mute).*(kapat|sustur|sessiz)|sesle kapa|(^|\s)mute\b/.test(t)){setMic('mute');say('Ses komutu: mikrofon kapatıldı.');return true;}
+    if(/(mikrofon|mute).*(degistir|toggle)/.test(t)){setMic('toggle');say('Ses komutu: mikrofon değiştirildi.');return true;}
+    return false;
+  }
+  function stopVoice(){
+    voiceActive=false;
+    if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}
+    if(voiceRec){try{voiceRec.onend=null;voiceRec.stop();}catch(e){}voiceRec=null;}
+  }
+  function startVoice(){
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){say('Ses komutu bu WebView içinde desteklenmiyor.',C.warn);return false;}
+    stopVoice();voiceActive=true;
+    try{
+      voiceRec=new SR();voiceRec.lang='tr-TR';voiceRec.continuous=true;voiceRec.interimResults=false;
+      voiceRec.onresult=function(e){for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)handleVoice(e.results[i][0].transcript);}};
+      voiceRec.onerror=function(e){if(e&&e.error==='not-allowed')say('Ses komutu için mikrofon izni gerekli.',C.warn);};
+      voiceRec.onend=function(){if(voiceActive)voiceRestartTimer=setTimeout(startVoice,1200);};
+      voiceRec.start();say('Ses komutu dinleniyor.');
+      return true;
+    }catch(e){say('Ses komutu başlatılamadı.',C.warn);return false;}
+  }
+
   /* ---------------- Ayar paneli (CSSOM, IPC yok) ---------------- */
   var GEAR='<svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.9 4.6l1.9 1.5-1.9 3.3-2.3-.9c-.4.4-.9.6-1.4.9l-.3 2.4H9.2l-.3-2.4c-.5-.3-1-.5-1.4-.9l-2.3.9L3.3 14.1l1.9-1.5c0-.2-.1-.4-.1-.6s.1-.4.1-.6L3.3 9.9l1.9-3.3 2.3.9c.4-.4.9-.6 1.4-.9L9.2 4h4.6l.3 2.4c.5.3 1 .5 1.4.9l2.3-.9 1.9 3.3-1.9 1.5c0 .2.1.4.1.6s-.1.4 0 .8z"/></svg>';
   var FT=[
@@ -423,6 +488,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     w.onclick=function(){w._c=!w._c;r();cb(w._c);};w.set=function(v){w._c=!!v;r();};return w;
   }
   function onToggle(k,v){set(k,v?'1':'0');applyAll();say('Kaydedildi.');}
+  function onVoiceToggle(v){set('voiceMute',v?'1':'0');if(v)startVoice();else{stopVoice();say('Ses komutu kapatıldı.');}}
   function nativeCmd(action,key,value){
     var u='idgafcord://native?action='+encodeURIComponent(action||'');
     if(key)u+='&key='+encodeURIComponent(key);
@@ -473,6 +539,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     for(var k in nativeSwitches){if(k in nativeState)nativeSwitches[k].set(!!nativeState[k]);}
     updateShortcutText();
   };
+  window.__LDC_nativeNotice=function(msg,warn){say(msg,warn?C.warn:C.grn);};
 
   function build(){try{
     if(document.getElementById('ldc-root')||!document.body)return;
@@ -529,6 +596,9 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     muteTxt.appendChild(muteShortcutText);
     var muteBtn=mkBtn('Ata',true);muteBtn.onclick=function(){startShortcutCapture(muteBtn);};
     muteRow.appendChild(muteTxt);muteRow.appendChild(muteBtn);body.appendChild(muteRow);
+    var voiceSw=mkSwitch(ison('voiceMute','0'),function(v){onVoiceToggle(v);});
+    switches['voiceMute']=voiceSw;
+    body.appendChild(mkRow('Sesle mikrofon komutu','Açıkken "mikrofonu kapat", "sesle kapa", "mikrofonu aç" gibi komutları dinler.',voiceSw));
     var upRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var upTxt=mk('div',{flex:'1'});upTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Güncellemeleri denetle'));
     upTxt.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},'Şimdi GitHub Releases üzerinden yeni sürüm var mı kontrol eder.'));
@@ -623,7 +693,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.3'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.4'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
@@ -634,7 +704,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
 
   function refresh(){
     FT.forEach(function(o){if(switches[o.k])switches[o.k].set(ison(o.k,o.def));});
-    ['compact','stars','cssOn','bubbles','hideMembers'].forEach(function(k){if(switches[k])switches[k].set(ison(k,'0'));});
+    ['compact','stars','cssOn','bubbles','hideMembers','voiceMute'].forEach(function(k){if(switches[k])switches[k].set(ison(k,'0'));});
     if(switches['splash'])switches['splash'].set(ison('splash','1'));
     if(themePills)themePills.set(get('theme','off'));
     if(radiusPills)radiusPills.set(get('radius','normal'));
@@ -651,14 +721,14 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   window.__LDC_openSettings=openPanel;
 
   if(document.body)build();else document.addEventListener('DOMContentLoaded',build);
+  if(ison('voiceMute','0'))setTimeout(startVoice,1500);
   // Hafif: yalnızca panel düğmesi kaybolduysa yeniden ekle. CSS'ler adopted
   // sheet olarak kalıcıdır; sürekli yeniden uygulamak gereksiz CPU harcar.
   setInterval(function(){if(document.body&&!document.getElementById('ldc-root'))build();},5000);
 })();"####;
 
 const MUTE_TOGGLE_SCRIPT: &str = r#"
-    document.dispatchEvent(new KeyboardEvent('keydown', {key:'m',code:'KeyM',ctrlKey:true,shiftKey:true,bubbles:true}));
-    document.dispatchEvent(new KeyboardEvent('keyup', {key:'m',code:'KeyM',ctrlKey:true,shiftKey:true,bubbles:true}));
+    window.__LDC_toggleMute&&window.__LDC_toggleMute();
 "#;
 
 // ---------------------------------------------------------------------------
@@ -839,16 +909,28 @@ pub fn run() {
                     }
                     "set_shortcut" => {
                         let candidate = value.trim().to_string();
-                        if !candidate.is_empty() && register_mute_shortcut(&nav_handle, &candidate)
-                        {
+                        let mut saved = false;
+                        if !candidate.is_empty() && register_mute_shortcut(&nav_handle, &candidate) {
                             if let Some(state) = nav_handle.try_state::<Mutex<Settings>>() {
                                 if let Ok(mut s) = state.lock() {
                                     s.mute_shortcut = candidate;
                                     save_settings(&nav_handle, &s);
+                                    saved = true;
                                 }
                             }
                         }
                         sync_native_settings(&nav_handle);
+                        let msg = if saved {
+                            serde_json::json!("Kısayol kaydedildi.")
+                        } else {
+                            serde_json::json!("Bu kısayol Windows tarafından kabul edilmedi.")
+                        };
+                        let warn = if saved { "false" } else { "true" };
+                        if let Some(window) = nav_handle.get_webview_window("main") {
+                            let _ = window.eval(&format!(
+                                "window.__LDC_nativeNotice&&window.__LDC_nativeNotice({msg},{warn});"
+                            ));
+                        }
                     }
                     _ => {}
                 }

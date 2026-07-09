@@ -410,8 +410,11 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     ".ldc-sp-tag{margin-top:20px;font-size:11px;font-weight:500;letter-spacing:4px;color:#57575e;font-family:'Cascadia Code','JetBrains Mono','Consolas',monospace;opacity:0;animation:ldcUp .8s .8s ease forwards}"+
     '@keyframes ldcUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}'+
     '@keyframes ldcSpIn{from{opacity:0}to{opacity:1}}@keyframes ldcSpOut{from{opacity:1}to{opacity:0}}';
+  var VOICE_CSS=
+    '.ldc-vdot{width:9px;height:9px;border-radius:50%;background:#23a55a;flex:0 0 auto;animation:ldcpulse 1.6s ease-out infinite}'+
+    '@keyframes ldcpulse{0%{box-shadow:0 0 0 0 rgba(35,165,90,.55)}70%{box-shadow:0 0 0 7px rgba(35,165,90,0)}100%{box-shadow:0 0 0 0 rgba(35,165,90,0)}}';
   var themeSt=new Styler(),accentSt=new Styler(),uiSt=new Styler(),structSt=new Styler(),starsSt=new Styler(),bgSt=new Styler(),upSt=new Styler(),cssSt=new Styler(),panelSt=new Styler();
-  panelSt.set(TERM_CSS+SPLASH_CSS);
+  panelSt.set(TERM_CSS+SPLASH_CSS+VOICE_CSS);
   function splash(){try{
     if(!ison('splash','1')||document.getElementById('ldc-splash'))return;
     var host=document.body||document.documentElement;if(!host)return;
@@ -492,18 +495,41 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   window.__LDC_toggleMute=function(){var ok=setMic('toggle');if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return ok;};
   window.__LDC_setMute=function(v){var ok=setMic(v);if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return ok;};
 
-  var voiceRec=null,voiceActive=false,voiceRestartTimer=null;
-  function normVoice(s){return String(s||'').toLowerCase().replace(/[ıİ]/g,'i').replace(/[ğĞ]/g,'g').replace(/[üÜ]/g,'u').replace(/[şŞ]/g,'s').replace(/[öÖ]/g,'o').replace(/[çÇ]/g,'c');}
-  function phraseMatch(text,key,def){var p=normVoice(get(key,def));return p&&text.indexOf(p)>=0;}
-  function handleVoice(s){
-    var t=normVoice(s);
-    if(phraseMatch(t,'voiceUnmutePhrase','mikrofonu aç')){setMic('unmute');say('Ses komutu: mikrofon açıldı.');return true;}
-    if(phraseMatch(t,'voiceMutePhrase','mikrofonu kapat')){setMic('mute');say('Ses komutu: mikrofon kapatıldı.');return true;}
-    if(/(mikrofon|ses|unmute).*(ac|aç)|sesle ac|unmute\b/.test(t)){setMic('unmute');say('Ses komutu: mikrofon açıldı.');return true;}
-    if(/(mikrofon|ses|mute).*(kapat|sustur|sessiz)|sesle kapa|(^|\s)mute\b/.test(t)){setMic('mute');say('Ses komutu: mikrofon kapatıldı.');return true;}
-    if(/(mikrofon|mute).*(degistir|toggle)/.test(t)){setMic('toggle');say('Ses komutu: mikrofon değiştirildi.');return true;}
-    return false;
+  var voiceRec=null,voiceActive=false,voiceRestartTimer=null,voiceWatchdog=null,voiceLastAction='',voiceLastActedAt=0,voiceAlive=0;
+  var voiceHud=null,voiceHudDot=null,voiceHudTxt=null,voiceHudTimer=null;
+  // Türkçe karakterleri sadeleştir + noktalama temizle → eşleştirme kolaylaşır.
+  function normVoice(s){return String(s||'').toLowerCase()
+    .replace(/[ıİ]/g,'i').replace(/[ğĞ]/g,'g').replace(/[üÜ]/g,'u').replace(/[şŞ]/g,'s').replace(/[öÖ]/g,'o').replace(/[çÇ]/g,'c')
+    .replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();}
+  // Komut çözümleyici: normalize edilmiş metinde niyeti bulur. Yanlış tetiklemeyi
+  // azaltmak için (özel ifade hariç) mikrofon/ses anahtarı + fiil şartı aranır.
+  function matchVoiceCommand(t){
+    var up=normVoice(get('voiceUnmutePhrase','mikrofonu aç'));
+    var mp=normVoice(get('voiceMutePhrase','mikrofonu kapat'));
+    if(up&&t.indexOf(up)>=0)return 'unmute';
+    if(mp&&t.indexOf(mp)>=0)return 'mute';
+    var mic=/\b(mikrofon\w*|mikp\w*|ses|sesi|sesim\w*|kendimi)\b/.test(t);
+    if(/\bunmute\b|\bkonusabilir\w*\b/.test(t))return 'unmute';
+    if(mic&&/\b(ac|acar|acsana|acabilir|acalim|geri ?ac|acin)\b/.test(t))return 'unmute';
+    if(/\bmute\b|\bsustur\w*\b|\bsessiz\w*\b/.test(t))return 'mute';
+    if(mic&&/\b(kapat\w*|kapa|kes)\b/.test(t))return 'mute';
+    if(mic&&/\b(degistir\w*|toggle|ac ?kapa)\b/.test(t))return 'toggle';
+    return null;
   }
+  function actVoice(t){
+    var cmd=matchVoiceCommand(t);if(!cmd)return false;
+    var now=Date.now();
+    // Aynı komutu 1.6 sn içinde tekrar uygulama (interim + final çift tetiklemesini engeller).
+    if(cmd===voiceLastAction&&now-voiceLastActedAt<1600)return true;
+    voiceLastAction=cmd;voiceLastActedAt=now;
+    var ok=setMic(cmd);
+    if(!ok){voiceHudFlash('Mikrofon düğmesi bulunamadı','warn');say('Mikrofon düğmesi bulunamadı.',C.warn);return true;}
+    voiceHudFlash(cmd==='mute'?'Mikrofon kapatıldı':(cmd==='unmute'?'Mikrofon açıldı':'Mikrofon değiştirildi'),cmd);
+    say(cmd==='mute'?'Ses komutu: mikrofon kapatıldı.':(cmd==='unmute'?'Ses komutu: mikrofon açıldı.':'Ses komutu: mikrofon değiştirildi.'));
+    return true;
+  }
+  // Eski isim (geriye dönük uyumluluk).
+  function handleVoice(s){return actVoice(normVoice(s));}
 
   function micState(){
     var btn=micButton();if(!btn)return 'unknown';
@@ -520,23 +546,71 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(!micBadge){micBadge=mk('div',{position:'fixed',left:'16px',bottom:'18px',zIndex:'2147482999',padding:'7px 11px',borderRadius:'18px',fontSize:'12px',fontWeight:'700',color:'#fff',boxShadow:'0 8px 26px rgba(0,0,0,.35)',pointerEvents:'none'});(document.body||document.documentElement).appendChild(micBadge);}
     micBadge.style.display='block';updateMicBadge();
   }
+  // Sesle komut için sol-altta canlı durum balonu (dinleniyor / son komut).
+  function ensureVoiceHud(){
+    if(!voiceHud){
+      voiceHud=mk('div',{position:'fixed',left:'16px',bottom:'52px',zIndex:'2147482997',display:'flex',alignItems:'center',gap:'8px',padding:'7px 13px 7px 11px',borderRadius:'20px',background:'rgba(20,21,24,.93)',border:'1px solid rgba(255,255,255,.09)',boxShadow:'0 8px 26px rgba(0,0,0,.42)',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",fontSize:'12px',fontWeight:'600',color:'#e6e8ea',maxWidth:'320px',pointerEvents:'none',transition:'border-color .18s',backdropFilter:'blur(8px)'});
+      voiceHudDot=mk('span',{});voiceHudDot.className='ldc-vdot';
+      voiceHudTxt=mk('span',{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},'Dinleniyor…');
+      voiceHud.appendChild(voiceHudDot);voiceHud.appendChild(voiceHudTxt);
+      (document.body||document.documentElement).appendChild(voiceHud);
+    }
+    voiceHud.style.display='flex';
+  }
+  function voiceHudState(mode){ // 'listen' | 'idle' | 'error'
+    if(!voiceHudDot)return;
+    voiceHudDot.style.background=mode==='error'?'#f0b232':(mode==='listen'?'#23a55a':'#80848e');
+    voiceHudDot.style.animationPlayState=mode==='listen'?'running':'paused';
+  }
+  function voiceHudFlash(text,kind){ // kind: 'mute' | 'unmute' | 'heard' | 'warn'
+    if(!voiceHud)return;
+    voiceHudTxt.textContent=text;
+    voiceHud.style.borderColor=kind==='mute'?'rgba(216,15,18,.65)':(kind==='unmute'?'rgba(35,165,90,.65)':(kind==='warn'?'rgba(240,178,50,.65)':'rgba(255,255,255,.09)'));
+    if(voiceHudTimer)clearTimeout(voiceHudTimer);
+    voiceHudTimer=setTimeout(function(){if(voiceHudTxt)voiceHudTxt.textContent='Dinleniyor…';if(voiceHud)voiceHud.style.borderColor='rgba(255,255,255,.09)';},2600);
+  }
   function stopVoice(){
     voiceActive=false;
     if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}
-    if(voiceRec){try{voiceRec.onend=null;voiceRec.stop();}catch(e){}voiceRec=null;}
+    if(voiceWatchdog){clearInterval(voiceWatchdog);voiceWatchdog=null;}
+    if(voiceRec){try{voiceRec.onend=null;voiceRec.onerror=null;voiceRec.onresult=null;voiceRec.stop();}catch(e){}voiceRec=null;}
+    if(voiceHud)voiceHud.style.display='none';
   }
   function startVoice(){
     var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR){say('Ses komutu bu WebView içinde desteklenmiyor.',C.warn);return false;}
-    stopVoice();voiceActive=true;
+    // Yalnızca tanıma nesnesini yenile; watchdog/aktiflik bayrağını koru.
+    if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}
+    if(voiceRec){try{voiceRec.onend=null;voiceRec.onerror=null;voiceRec.onresult=null;voiceRec.stop();}catch(e){}voiceRec=null;}
+    voiceActive=true;ensureVoiceHud();voiceHudState('listen');voiceAlive=Date.now();
     try{
-      voiceRec=new SR();voiceRec.lang='tr-TR';voiceRec.continuous=true;voiceRec.interimResults=false;
-      voiceRec.onresult=function(e){for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)handleVoice(e.results[i][0].transcript);}};
-      voiceRec.onerror=function(e){if(e&&e.error==='not-allowed')say('Ses komutu için mikrofon izni gerekli.',C.warn);};
-      voiceRec.onend=function(){if(voiceActive)voiceRestartTimer=setTimeout(startVoice,1200);};
-      voiceRec.start();say('Ses komutu dinleniyor.');
+      voiceRec=new SR();voiceRec.lang='tr-TR';voiceRec.continuous=true;voiceRec.interimResults=true;voiceRec.maxAlternatives=3;
+      voiceRec.onstart=function(){voiceAlive=Date.now();voiceHudState('listen');};
+      voiceRec.onresult=function(e){
+        voiceAlive=Date.now();
+        for(var i=e.resultIndex;i<e.results.length;i++){
+          var res=e.results[i],acted=false;
+          for(var a=0;a<res.length;a++){var t=normVoice(res[a].transcript);if(!t)continue;if(actVoice(t)){acted=true;break;}}
+          if(!acted&&res.isFinal){var ft=normVoice(res[0].transcript);if(ft&&ft.length>1)voiceHudFlash('duydum: '+ft,'heard');}
+        }
+      };
+      voiceRec.onerror=function(e){
+        var err=e&&e.error;
+        if(err==='not-allowed'||err==='service-not-allowed'){voiceActive=false;voiceHudState('error');voiceHudFlash('Mikrofon izni gerekli','warn');say('Ses komutu için mikrofon izni gerekli.',C.warn);}
+        else{voiceHudState('idle');}
+      };
+      voiceRec.onend=function(){voiceHudState('idle');if(voiceActive)voiceRestartTimer=setTimeout(startVoice,300);};
+      voiceRec.start();
+      // Watchdog: tanıma sessizce ölür de onend yeniden başlatmazsa dirilt.
+      if(!voiceWatchdog)voiceWatchdog=setInterval(function(){
+        if(voiceActive&&!voiceRestartTimer&&(!voiceRec||Date.now()-voiceAlive>12000)){try{startVoice();}catch(e){}}
+      },5000);
       return true;
-    }catch(e){say('Ses komutu başlatılamadı.',C.warn);return false;}
+    }catch(e){
+      // start() zaten çalışıyorken hata verebilir; kısa süre sonra tekrar dene.
+      if(voiceActive&&!voiceRestartTimer)voiceRestartTimer=setTimeout(startVoice,600);
+      return false;
+    }
   }
 
   /* ---------------- Ayar paneli (CSSOM, IPC yok) ---------------- */
@@ -821,7 +895,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     muteRow.appendChild(muteTxt);muteRow.appendChild(muteBtns);body.appendChild(muteRow);
     var voiceSw=mkSwitch(ison('voiceMute','0'),function(v){onVoiceToggle(v);});
     switches['voiceMute']=voiceSw;
-    body.appendChild(mkRow('Sesle mikrofon komutu','Açıkken "mikrofonu kapat", "sesle kapa", "mikrofonu aç" gibi komutları dinler.',voiceSw));
+    body.appendChild(mkRow('Sesle mikrofon komutu','Sürekli dinler; komut duyunca mikrofonu anında aç/kapatır. Sol altta canlı bir durum balonu (dinleniyor / son komut) belirir.',voiceSw));
     var badgeSw=mkSwitch(ison('micBadge','1'),function(v){set('micBadge',v?'1':'0');ensureMicBadge();say('Kaydedildi.');});
     switches['micBadge']=badgeSw;
     body.appendChild(mkRow('Mikrofon durum rozeti','Sol altta mikrofon açık/kapalı durumunu küçük rozetle gösterir.',badgeSw));
@@ -835,6 +909,15 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     ph1.appendChild(voiceMuteInp);ph2.appendChild(voiceUnmuteInp);
     var phraseBtn=mkBtn('Kaydet',true);phraseBtn.onclick=function(){set('voiceMutePhrase',voiceMuteInp.value.trim()||'mikrofonu kapat');set('voiceUnmutePhrase',voiceUnmuteInp.value.trim()||'mikrofonu aç');say('Ses komutları kaydedildi.');};
     phraseRow.appendChild(ph1);phraseRow.appendChild(ph2);phraseRow.appendChild(phraseBtn);body.appendChild(phraseRow);
+    var vhelp=mk('div',{background:C.field,border:'1px solid '+C.line,borderRadius:'10px',padding:'11px 13px',margin:'12px 0'});
+    vhelp.appendChild(mk('div',{fontSize:'12px',color:C.hl,fontWeight:'600',marginBottom:'5px'},'Anlaşılan örnek komutlar'));
+    var vex=[['Kapat','“mikrofonu kapat”, “sustur”, “beni sustur”, “sesi kapat”'],['Aç','“mikrofonu aç”, “sesimi aç”, “geri aç”'],['Değiştir','“mikrofonu değiştir”']];
+    vex.forEach(function(p){var r=mk('div',{display:'flex',gap:'8px',fontSize:'12px',color:'#b5bac1',lineHeight:'1.5'});r.appendChild(mk('span',{color:C.mut,fontWeight:'700',minWidth:'62px'},p[0]));r.appendChild(mk('span',{},p[1]));vhelp.appendChild(r);});
+    var vtestRow=mk('div',{display:'flex',alignItems:'center',gap:'10px',marginTop:'9px'});
+    var vtest=mkBtn('Mikrofon düğmesini test et',false);
+    vtest.onclick=function(){var s=micState();if(s==='unknown'){say('Discord’un mikrofon düğmesi bulunamadı — bir ses kanalına bağlıyken dene.',C.warn);}else{say('Mikrofon düğmesi bulundu: durum “'+(s==='live'?'açık':'kapalı')+'”. Komutlar çalışmalı.');}};
+    vtestRow.appendChild(vtest);vhelp.appendChild(vtestRow);
+    body.appendChild(vhelp);
     var upRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var upTxt=mk('div',{flex:'1'});upTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Güncellemeleri denetle'));
     upTxt.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},'Şimdi GitHub Releases üzerinden yeni sürüm var mı kontrol eder.'));
@@ -932,7 +1015,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.10'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.11'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);

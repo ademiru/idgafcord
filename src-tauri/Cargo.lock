@@ -2032,7 +2032,7 @@ dependencies = [
 
 [[package]]
 name = "lightweight-discord-client"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "serde",
  "serde_json",

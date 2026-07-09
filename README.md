@@ -1,66 +1,47 @@
-# Lightweight Discord Client
+# idgafcord
 
-Discord'un web arayüzünü saran, hafif ve gizlilik odaklı bir Tauri masaüstü istemcisi.
+![Privacy](https://img.shields.io/badge/privacy-first-7C5CFF?style=for-the-badge)
+![Discord](https://img.shields.io/badge/discord-lightweight-57F287?style=for-the-badge)
+![Windows](https://img.shields.io/badge/windows-ready-00A4EF?style=for-the-badge)
+![Updates](https://img.shields.io/badge/updates-auto-FFB02E?style=for-the-badge)
 
-## Özellikler
-
-Tüm ayarlar **uygulama içindeki ayar panelinden** yönetilir: Discord penceresinin
-sağ alt köşesindeki **dişli düğmeye** tıklayın (ya da tepsi menüsünden "Ayarlar").
-Panel Discord temasına uygun; anahtarlar (toggle), tema (CSS) düzenleyici ve
-bakım düğmeleri içerir. Sistem ayarları ve güncelleme kontrolü de bu paneldedir.
-Ayarlar `settings.json` içinde kalıcı saklanır.
-Tepsi menüsü sadeleştirildi: **Göster / Ayarlar / Çıkış** (sol tık = pencereyi göster).
-
-- **Sistem tepsisi**: Kapatınca uygulama tamamen kapanmaz, tepsiye küçülür (opsiyonel).
-- **Windows ile başlat**: Açılışta otomatik başlatma (opsiyonel).
-- **Tepside sessiz başlat**: Pencereyi açmadan doğrudan tepside başlar (opsiyonel).
-- **Telemetri engelleme**: `science`, `metrics`, `track`, `sentry`, `analytics` gibi
-  izleme isteklerini istemci içinde düşürür (opsiyonel, canlı aç/kapa).
-- **Nitro/reklam gizleme**: Upsell/hediye öğelerini CSS ile gizler (opsiyonel).
-- **Donanım hızlandırmayı kapat**: RAM/GPU kullanımını azaltır (yeniden başlatma gerektirir).
-- **Özel tema (theme.css)**: Kendi CSS'inizi enjekte eder. "Tema klasörünü aç" ile
-  düzenleyebilirsiniz.
-- **Önbelleği temizle** ve **okunmamış rozeti** (görev çubuğu + tepsi ipucu).
-- **Küresel kısayol**: `Ctrl/Cmd+Shift+M` ile mikrofonu sustur.
-- **Otomatik güncelleme kontrolü**: Tepsi menüsündeki seçenek açıkken başlangıçta
-  ve arka planda periyodik olarak yeni sürümü denetler.
-
-## Geliştirme
-
-```bash
-npm install
-npm run tauri dev
+```text
+  _     _             __                     _
+ (_) __| | __ _  __ _ / _| ___ ___  _ __ __| |
+ | |/ _` |/ _` |/ _` | |_ / __/ _ \| '__/ _` |
+ | | (_| | (_| | (_| |  _| (_| (_) | | | (_| |
+ |_|\__,_|\__, |\__, |_|  \___\___/|_|  \__,_|
+          |___/ |___/
 ```
 
-## Otomatik güncelleme kurulumu (önemli)
+Hafif, sade ve gizlilik odaklı Discord masaustu istemcisi.
 
-Güncelleyici için gerçek bir imza anahtarı `src-tauri/updater-private.key` içinde
-üretildi ve public key `tauri.conf.json > plugins.updater.pubkey` içine yazıldı.
-Çalışır hale getirmek için:
+## Ne Ise Yarar?
 
-1. **Özel anahtarı gizli tutun.** `updater-private.key` (ve `.pub`) `.gitignore`
-   içindedir, commit etmeyin. Kaybederseniz yeni sürümleri imzalayamazsınız.
-2. **Endpoint'i ayarlayın.** `tauri.conf.json` içindeki
-   `plugins.updater.endpoints` değerini kendi sunucunuzla değiştirin
-   (şu an yer tutucu: `SUNUCUNUZU-BURAYA-YAZIN.example.com`). Endpoint,
-   `{{target}}`, `{{arch}}`, `{{current_version}}` şablonlarını destekleyen ve
-   bir `latest.json` döndüren bir URL olmalıdır.
-3. **Sürümü imzalayarak derleyin.** Özel anahtarı ortam değişkeni olarak verin:
-   ```bash
-   export TAURI_SIGNING_PRIVATE_KEY="$(cat src-tauri/updater-private.key)"
-   # anahtarın parolası yok, bu yüzden password değişkeni gerekmez
-   npm run tauri build
-   ```
-   `createUpdaterArtifacts` açık olduğu için imzalı güncelleme paketleri üretilir.
-4. Üretilen paketleri ve `latest.json` dosyasını endpoint'inize yükleyin.
+- Discord'u daha hafif bir masaustu uygulamasi gibi kullanmani saglar.
+- Gereksiz izleme ve telemetri isteklerini engeller.
+- Nitro, hediye ve reklam benzeri kalabaligi gizleyebilir.
+- Kapatinca tamamen kapanmak yerine sistem tepsisine kuculebilir.
+- Windows acilinca otomatik baslayabilir.
+- Istersen pencere acmadan sessizce tepside baslar.
+- Yeni surumleri otomatik kontrol edebilir.
+- Tek tusla guncelleme denetleyebilir.
+- Tema, renk, yazi boyutu ve gorunum ayarlarini uygulama icinden degistirir.
+- Ozel logo, arka plan ve CSS destegi verir.
+- Mesajlari daha kompakt veya baloncuklu gosterebilir.
+- Sagdaki uye listesini gizleyip daha fazla alan acabilir.
+- Donanim hizlandirmayi kapatarak kaynak kullanimini azaltabilir.
+- Oyun modunda tepsideyken Discord'u askida tutabilir.
+- Mikrofonu global kisayolla hizli susturabilir.
 
-Endpoint ayarlanana kadar "Güncellemeleri denetle" güvenle çalışır; sadece
-güncelleme bulamaz (uygulama çökmemez).
+## Ayarlar
 
-## Not: telemetri engelleme yöntemi
+- Tum ayarlar Discord icindeki idgafcord disli panelindedir.
+- Sistem tepsisi menusunden de temel kontroller kullanilabilir.
+- Ayarlar kayitli kalir.
 
-WebView2, keyfi HTTPS isteklerini native katmanda kesecek genel bir API sunmaz.
-Bu yüzden engelleme, Discord'un scriptlerinden önce enjekte edilen bir başlatma
-scriptiyle `fetch`/`XMLHttpRequest`/`sendBeacon` sarmalanarak yapılır — istek
-ağa çıkmadan istemci içinde düşürülür. Vesktop/ArmCord gibi hafif istemcilerin
-kullandığı yöntemin aynısıdır.
+## Indirme
+
+- Kurulum isteyenler setup dosyasini kullanir.
+- Kurulum istemeyenler portable zip dosyasini kullanir.
+- En yeni surum GitHub Releases sayfasindadir.

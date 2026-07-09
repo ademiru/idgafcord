@@ -38,6 +38,8 @@ struct Settings {
     autostart: bool,
     start_minimized: bool,
     disable_gpu: bool,
+    #[serde(default)]
+    stream_performance: bool,
     #[serde(default = "default_true")]
     auto_update_check: bool,
     #[serde(default)]
@@ -61,6 +63,7 @@ impl Default for Settings {
             autostart: false,
             start_minimized: false,
             disable_gpu: false,
+            stream_performance: false,
             auto_update_check: true,
             game_mode: false,
             mute_shortcut: default_mute_shortcut(),
@@ -145,6 +148,7 @@ fn sync_native_settings<R: Runtime>(app: &AppHandle<R>) {
         "start_minimized": settings.start_minimized,
         "autostart": settings.autostart,
         "disable_gpu": settings.disable_gpu,
+        "stream_performance": settings.stream_performance,
         "game_mode": settings.game_mode,
         "auto_update_check": settings.auto_update_check,
         "mute_shortcut": settings.mute_shortcut,
@@ -446,7 +450,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   function mk(tag,o,txt){var e=document.createElement(tag);if(o)st(e,o);if(txt!=null)e.textContent=txt;return e;}
   function hover(el,a,b){el.addEventListener('mouseenter',function(){el.style.background=b;});el.addEventListener('mouseleave',function(){el.style.background=a;});}
   var statusEl,themeEl,modal,footEl,switches={},nativeSwitches={},themePills,accentInp,fontRange,fontVal,bgInp,termEl,termSumEl,termTimer=null,radiusPills,logoInp,fontInp,muteShortcutText;
-  var nativeState={minimize_to_tray:true,start_minimized:false,autostart:false,disable_gpu:false,game_mode:false,auto_update_check:true,mute_shortcut:'CommandOrControl+Shift+M'};
+  var nativeState={minimize_to_tray:true,start_minimized:false,autostart:false,disable_gpu:false,stream_performance:false,game_mode:false,auto_update_check:true,mute_shortcut:'CommandOrControl+Shift+M'};
   function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':'&gt;';});}
   function fmtTime(t){var d=new Date(t),p=function(n){return(n<10?'0':'')+n;};return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
   function shortUrl(u){return String(u).replace(/^[^/]*\//,'/').split('?')[0].slice(0,52);}
@@ -589,6 +593,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     body.appendChild(nativeRow('minimize_to_tray','Kapatınca tepsiye küçült','Pencere kapatılınca uygulama tamamen kapanmaz, sistem tepsisinde çalışmaya devam eder.'));
     body.appendChild(nativeRow('autostart','Windows ile başlat','Windows açıldığında idgafcord otomatik başlatılır.'));
     body.appendChild(nativeRow('start_minimized','Tepside sessiz başlat','Otomatik başlatmada pencere açmadan doğrudan tepside bekler.'));
+    body.appendChild(nativeRow('stream_performance','Ekran paylaşımı performansı','GPU hızlandırmayı açık tutar ve paylaşımda takılma/kalite düşmesini azaltır; 1080/60 izne bağlıdır.'));
     body.appendChild(nativeRow('auto_update_check','Güncellemeleri otomatik denetle','Başlangıçta ve 6 saatte bir yeni imzalı sürümü kontrol eder.'));
     var muteRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var muteTxt=mk('div',{flex:'1'});muteTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Mikrofon susturma kısayolu'));
@@ -604,7 +609,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     upTxt.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},'Şimdi GitHub Releases üzerinden yeni sürüm var mı kontrol eder.'));
     var upBtn=mkBtn('Denetle',true);upBtn.onclick=function(){nativeCmd('check_update');say('Güncelleme kontrol ediliyor...');};
     upRow.appendChild(upTxt);upRow.appendChild(upBtn);body.appendChild(upRow);
-    body.appendChild(nativeRow('disable_gpu','Donanım hızlandırmayı kapat','GPU kaynak kullanımını azaltır; değişiklik yeniden başlatmadan sonra etkili olur.'));
+    body.appendChild(nativeRow('disable_gpu','Donanım hızlandırmayı kapat','GPU kaynak kullanımını azaltır; ekran paylaşımı performans modunu kapatır.'));
     body.appendChild(nativeRow('game_mode','Oyun modu: tepsideyken askıya al','Tepsiye küçültülünce Discord bağlantısını tamamen askıya alır; bildirimler durabilir.'));
 
     body.appendChild(sec('Engellenen izleme istekleri'));
@@ -693,7 +698,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.4'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.5'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
@@ -773,6 +778,12 @@ pub fn run() {
             let i_autostart = CheckMenuItemBuilder::with_id("t_autostart", "Windows ile başlat")
                 .checked(settings.autostart)
                 .build(app)?;
+            let i_stream = CheckMenuItemBuilder::with_id(
+                "t_stream",
+                "Ekran paylaşımı performansı (yeniden başlat)",
+            )
+            .checked(settings.stream_performance)
+            .build(app)?;
             let i_gpu = CheckMenuItemBuilder::with_id("t_gpu", "Donanım hızlandırmayı kapat (yeniden başlat)")
                 .checked(settings.disable_gpu)
                 .build(app)?;
@@ -792,7 +803,7 @@ pub fn run() {
             let i_quit = MenuItemBuilder::with_id("quit", "Çıkış").build(app)?;
 
             let menu = MenuBuilder::new(app)
-                .items(&[&i_tray, &i_startmin, &i_autostart, &i_gpu, &i_game])
+                .items(&[&i_tray, &i_startmin, &i_autostart, &i_stream, &i_gpu, &i_game])
                 .separator()
                 .items(&[&i_settings, &i_auto_update, &i_cache, &i_update])
                 .separator()
@@ -802,17 +813,20 @@ pub fn run() {
             let c_tray = i_tray.clone();
             let c_startmin = i_startmin.clone();
             let c_autostart = i_autostart.clone();
+            let c_stream = i_stream.clone();
             let c_gpu = i_gpu.clone();
             let c_game = i_game.clone();
             let c_auto_update = i_auto_update.clone();
             let n_tray = i_tray.clone();
             let n_startmin = i_startmin.clone();
             let n_autostart = i_autostart.clone();
+            let n_stream = i_stream.clone();
             let n_gpu = i_gpu.clone();
             let n_game = i_game.clone();
             let n_auto_update = i_auto_update.clone();
             let check_on_start = settings.auto_update_check;
             let disable_gpu = settings.disable_gpu;
+            let stream_performance = settings.stream_performance;
             let start_minimized = settings.start_minimized;
             let mute_shortcut = settings.mute_shortcut.clone();
 
@@ -887,6 +901,18 @@ pub fn run() {
                                     "disable_gpu" => {
                                         s.disable_gpu = enabled;
                                         let _ = n_gpu.set_checked(enabled);
+                                        if enabled {
+                                            s.stream_performance = false;
+                                            let _ = n_stream.set_checked(false);
+                                        }
+                                    }
+                                    "stream_performance" => {
+                                        s.stream_performance = enabled;
+                                        let _ = n_stream.set_checked(enabled);
+                                        if enabled {
+                                            s.disable_gpu = false;
+                                            let _ = n_gpu.set_checked(false);
+                                        }
                                     }
                                     "game_mode" => {
                                         s.game_mode = enabled;
@@ -939,6 +965,10 @@ pub fn run() {
             if disable_gpu {
                 builder = builder.additional_browser_args(
                     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu",
+                );
+            } else if stream_performance {
+                builder = builder.additional_browser_args(
+                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --autoplay-policy=no-user-gesture-required",
                 );
             }
             if start_minimized {
@@ -1001,6 +1031,22 @@ pub fn run() {
                             let mut s = state.lock().unwrap();
                             s.disable_gpu = !s.disable_gpu;
                             let _ = c_gpu.set_checked(s.disable_gpu);
+                            if s.disable_gpu {
+                                s.stream_performance = false;
+                                let _ = c_stream.set_checked(false);
+                            }
+                            save_settings(app, &s);
+                            drop(s);
+                            sync_native_settings(app);
+                        }
+                        "t_stream" => {
+                            let mut s = state.lock().unwrap();
+                            s.stream_performance = !s.stream_performance;
+                            let _ = c_stream.set_checked(s.stream_performance);
+                            if s.stream_performance {
+                                s.disable_gpu = false;
+                                let _ = c_gpu.set_checked(false);
+                            }
                             save_settings(app, &s);
                             drop(s);
                             sync_native_settings(app);

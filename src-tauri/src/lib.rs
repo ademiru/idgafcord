@@ -527,6 +527,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   window.__LDC_setMute=function(v){var ok=setMic(v);if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return ok;};
 
   var voiceRec=null,voiceActive=false,voiceRestartTimer=null,voiceWatchdog=null,voiceLastAction='',voiceLastActedAt=0,voiceAlive=0;
+  var voiceStarting=false,voiceStartedAt=0,voiceFails=0;
   var voiceHud=null,voiceHudDot=null,voiceHudTxt=null,voiceHudTimer=null;
   // Türkçe karakterleri sadeleştir + noktalama temizle → eşleştirme kolaylaşır.
   function normVoice(s){return String(s||'').toLowerCase()
@@ -600,25 +601,35 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(voiceHudTimer)clearTimeout(voiceHudTimer);
     voiceHudTimer=setTimeout(function(){if(voiceHudTxt)voiceHudTxt.textContent='Dinleniyor…';if(voiceHud)voiceHud.style.borderColor='rgba(255,255,255,.09)';},2600);
   }
+  function voiceReleaseRec(){if(voiceRec){try{voiceRec.onstart=null;voiceRec.onend=null;voiceRec.onerror=null;voiceRec.onresult=null;voiceRec.abort?voiceRec.abort():voiceRec.stop();}catch(e){}voiceRec=null;}}
   function stopVoice(){
-    voiceActive=false;
+    voiceActive=false;voiceStarting=false;
     if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}
     if(voiceWatchdog){clearInterval(voiceWatchdog);voiceWatchdog=null;}
-    if(voiceRec){try{voiceRec.onend=null;voiceRec.onerror=null;voiceRec.onresult=null;voiceRec.stop();}catch(e){}voiceRec=null;}
+    voiceReleaseRec();
     if(voiceHud)voiceHud.style.display='none';
+  }
+  // Devre kesici: art arda hızlı çöküşlerde ses tanımayı KAPAT ki yeniden-başlatma
+  // döngüsü sayfayı boğup dondurmasın/beyaz ekran yapmasın. Üstel geri çekilme.
+  function voiceGiveUp(msg){voiceActive=false;voiceStarting=false;if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}if(voiceWatchdog){clearInterval(voiceWatchdog);voiceWatchdog=null;}voiceReleaseRec();voiceHudState('error');voiceHudFlash(msg||'Ses tanıma kapatıldı','warn');}
+  function scheduleVoiceRestart(){
+    if(!voiceActive||voiceStarting||voiceRestartTimer)return;
+    var delay=Math.min(900*Math.pow(2,Math.min(voiceFails,5)),20000); // 0.9s → cap 20s
+    voiceRestartTimer=setTimeout(function(){voiceRestartTimer=null;startVoice();},delay);
   }
   function startVoice(){
     var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){say('Ses komutu bu WebView içinde desteklenmiyor.',C.warn);return false;}
-    // Yalnızca tanıma nesnesini yenile; watchdog/aktiflik bayrağını koru.
+    if(!SR){voiceGiveUp('Ses tanıma bu ortamda yok');return false;}
+    if(voiceStarting)return false;            // tek-uçuş: üst üste başlatma yok
+    voiceStarting=true;
     if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}
-    if(voiceRec){try{voiceRec.onend=null;voiceRec.onerror=null;voiceRec.onresult=null;voiceRec.stop();}catch(e){}voiceRec=null;}
-    voiceActive=true;ensureVoiceHud();voiceHudState('listen');voiceAlive=Date.now();
+    voiceReleaseRec();
+    voiceActive=true;ensureVoiceHud();voiceHudState('listen');voiceAlive=Date.now();voiceStartedAt=Date.now();
     try{
       voiceRec=new SR();voiceRec.lang='tr-TR';voiceRec.continuous=true;voiceRec.interimResults=true;voiceRec.maxAlternatives=3;
-      voiceRec.onstart=function(){voiceAlive=Date.now();voiceHudState('listen');};
+      voiceRec.onstart=function(){voiceStarting=false;voiceStartedAt=Date.now();voiceAlive=Date.now();voiceHudState('listen');};
       voiceRec.onresult=function(e){
-        voiceAlive=Date.now();
+        voiceFails=0;voiceAlive=Date.now();  // çalışıyor → devre kesici sayacını sıfırla
         for(var i=e.resultIndex;i<e.results.length;i++){
           var res=e.results[i],acted=false;
           for(var a=0;a<res.length;a++){var t=normVoice(res[a].transcript);if(!t)continue;if(actVoice(t)){acted=true;break;}}
@@ -627,19 +638,29 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
       };
       voiceRec.onerror=function(e){
         var err=e&&e.error;
-        if(err==='not-allowed'||err==='service-not-allowed'){voiceActive=false;voiceHudState('error');voiceHudFlash('Mikrofon izni gerekli','warn');say('Ses komutu için mikrofon izni gerekli.',C.warn);}
-        else{voiceHudState('idle');}
+        // İzin yoksa TEKRAR DENEME (sonsuz döngü kaynağı) — tamamen kapat.
+        if(err==='not-allowed'||err==='service-not-allowed'){voiceGiveUp('Mikrofon izni yok — ses komutu kapatıldı');say('Ses komutu için mikrofon izni gerekli.',C.warn);return;}
+        voiceHudState('idle'); // diğer hatalar: onend devralır (geri çekilmeli)
       };
-      voiceRec.onend=function(){voiceHudState('idle');if(voiceActive)voiceRestartTimer=setTimeout(startVoice,300);};
+      voiceRec.onend=function(){
+        voiceStarting=false;voiceHudState('idle');
+        if(!voiceActive)return;
+        // Kısa sürede öldüyse başarısızlık say (bozuk ortam); uzun dinlediyse sıfırla.
+        if(Date.now()-voiceStartedAt<1500)voiceFails++;else voiceFails=0;
+        if(voiceFails>=6){voiceGiveUp('Ses tanıma bu ortamda kararsız — kapatıldı. Ayarlardan tekrar açabilirsin.');return;}
+        scheduleVoiceRestart();
+      };
       voiceRec.start();
-      // Watchdog: tanıma sessizce ölür de onend yeniden başlatmazsa dirilt.
+      // Hafif watchdog: onend hiç gelmezse (sessiz ölüm) tek seferlik diriltme dener.
       if(!voiceWatchdog)voiceWatchdog=setInterval(function(){
-        if(voiceActive&&!voiceRestartTimer&&(!voiceRec||Date.now()-voiceAlive>12000)){try{startVoice();}catch(e){}}
-      },5000);
+        if(voiceActive&&!voiceStarting&&!voiceRestartTimer&&(!voiceRec||Date.now()-voiceAlive>25000)){voiceFails++;if(voiceFails>=6){voiceGiveUp('Ses tanıma yanıt vermiyor — kapatıldı');return;}scheduleVoiceRestart();}
+      },8000);
       return true;
     }catch(e){
-      // start() zaten çalışıyorken hata verebilir; kısa süre sonra tekrar dene.
-      if(voiceActive&&!voiceRestartTimer)voiceRestartTimer=setTimeout(startVoice,600);
+      // start() zaten çalışıyorken/başarısızken hata verebilir; geri çekilerek dene.
+      voiceStarting=false;voiceReleaseRec();voiceFails++;
+      if(voiceFails>=6){voiceGiveUp('Ses tanıma başlatılamıyor — kapatıldı');return false;}
+      scheduleVoiceRestart();
       return false;
     }
   }
@@ -1046,7 +1067,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.12'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.13'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);

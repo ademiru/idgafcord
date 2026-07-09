@@ -1,18 +1,20 @@
-# idgafcord
+# IDGAFCORD
 
 ![Privacy](https://img.shields.io/badge/privacy-first-7C5CFF?style=for-the-badge)
 ![Discord](https://img.shields.io/badge/discord-lightweight-57F287?style=for-the-badge)
 ![Windows](https://img.shields.io/badge/windows-ready-00A4EF?style=for-the-badge)
 ![Updates](https://img.shields.io/badge/updates-auto-FFB02E?style=for-the-badge)
 
-```text
-  _     _             __                     _
- (_) __| | __ _  __ _ / _| ___ ___  _ __ __| |
- | |/ _` |/ _` |/ _` | |_ / __/ _ \| '__/ _` |
- | | (_| | (_| | (_| |  _| (_| (_) | | | (_| |
- |_|\__,_|\__, |\__, |_|  \___\___/|_|  \__,_|
-          |___/ |___/
-```
+<pre>
+<font color="#7C5CFF">╔══════════════════════════════════════════════════════════════╗</font>
+<font color="#7C5CFF">║</font> <font color="#57F287">██╗██████╗  ██████╗  █████╗ ███████╗ ██████╗ ██████╗ ██████╗ ██████╗ </font> <font color="#7C5CFF">║</font>
+<font color="#7C5CFF">║</font> <font color="#57F287">██║██╔══██╗██╔════╝ ██╔══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔══██╗</font> <font color="#7C5CFF">║</font>
+<font color="#7C5CFF">║</font> <font color="#FFB02E">██║██║  ██║██║  ███╗███████║█████╗  ██║     ██║   ██║██████╔╝██║  ██║</font> <font color="#7C5CFF">║</font>
+<font color="#7C5CFF">║</font> <font color="#00A4EF">██║██║  ██║██║   ██║██╔══██║██╔══╝  ██║     ██║   ██║██╔══██╗██║  ██║</font> <font color="#7C5CFF">║</font>
+<font color="#7C5CFF">║</font> <font color="#F38BA8">██║██████╔╝╚██████╔╝██║  ██║██║     ╚██████╗╚██████╔╝██║  ██║██████╔╝</font> <font color="#7C5CFF">║</font>
+<font color="#7C5CFF">║</font> <font color="#CBA6F7">╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝      ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ </font> <font color="#7C5CFF">║</font>
+<font color="#7C5CFF">╚══════════════════════════════════════════════════════════════╝</font>
+</pre>
 
 Hafif, sade ve gizlilik odaklı Discord masaustu istemcisi.
 

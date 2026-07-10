@@ -1,55 +1,115 @@
-# IDGAFCORD
+<div align="center">
 
-![Privacy](https://img.shields.io/badge/privacy-first-7C5CFF?style=for-the-badge)
+# idgafcord
+
+**Hafif. Gizli. Senin kontrolünde.**
+Discord'un tüm gücü — şişkinlik, izleme ve reklam kalabalığı olmadan.
+
+![Privacy](https://img.shields.io/badge/gizlilik-önce_sen-7C5CFF?style=for-the-badge)
 ![Discord](https://img.shields.io/badge/discord-lightweight-57F287?style=for-the-badge)
-![Windows](https://img.shields.io/badge/windows-ready-00A4EF?style=for-the-badge)
-![Updates](https://img.shields.io/badge/updates-auto-FFB02E?style=for-the-badge)
+![Windows](https://img.shields.io/badge/windows-hazır-00A4EF?style=for-the-badge)
+![Updates](https://img.shields.io/badge/güncelleme-otomatik-FFB02E?style=for-the-badge)
 
 <pre>
-<font color="#7C5CFF">╔══════════════════════════════════════════════════════════════╗</font>
-<font color="#7C5CFF">║</font> <font color="#57F287">██╗██████╗  ██████╗  █████╗ ███████╗ ██████╗ ██████╗ ██████╗ ██████╗ </font> <font color="#7C5CFF">║</font>
-<font color="#7C5CFF">║</font> <font color="#57F287">██║██╔══██╗██╔════╝ ██╔══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔══██╗</font> <font color="#7C5CFF">║</font>
-<font color="#7C5CFF">║</font> <font color="#FFB02E">██║██║  ██║██║  ███╗███████║█████╗  ██║     ██║   ██║██████╔╝██║  ██║</font> <font color="#7C5CFF">║</font>
-<font color="#7C5CFF">║</font> <font color="#00A4EF">██║██║  ██║██║   ██║██╔══██║██╔══╝  ██║     ██║   ██║██╔══██╗██║  ██║</font> <font color="#7C5CFF">║</font>
-<font color="#7C5CFF">║</font> <font color="#F38BA8">██║██████╔╝╚██████╔╝██║  ██║██║     ╚██████╗╚██████╔╝██║  ██║██████╔╝</font> <font color="#7C5CFF">║</font>
-<font color="#7C5CFF">║</font> <font color="#CBA6F7">╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝      ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ </font> <font color="#7C5CFF">║</font>
-<font color="#7C5CFF">╚══════════════════════════════════════════════════════════════╝</font>
+██╗██████╗  ██████╗  █████╗ ███████╗ ██████╗ ██████╗ ██████╗ ██████╗
+██║██╔══██╗██╔════╝ ██╔══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔══██╗
+██║██║  ██║██║  ███╗███████║█████╗  ██║     ██║   ██║██████╔╝██║  ██║
+██║██║  ██║██║   ██║██╔══██║██╔══╝  ██║     ██║   ██║██╔══██╗██║  ██║
+██║██████╔╝╚██████╔╝██║  ██║██║     ╚██████╗╚██████╔╝██║  ██║██████╔╝
+╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝      ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝
 </pre>
 
-Hafif, sade ve gizlilik odaklı Discord masaustu istemcisi.
+*“I DON'T GIVE A FUCK ABOUT YOUR DATA.”*
 
-## Ne Ise Yarar?
+### [⬇️ İndir (Windows)](https://github.com/ademiru/idgafcord/releases/latest)
 
-- Discord'u daha hafif bir masaustu uygulamasi gibi kullanmani saglar.
-- Gereksiz izleme ve telemetri isteklerini engeller.
-- Nitro, hediye ve reklam benzeri kalabaligi gizleyebilir.
-- Kapatinca tamamen kapanmak yerine sistem tepsisine kuculebilir.
-- Windows acilinca otomatik baslayabilir.
-- Istersen pencere acmadan sessizce tepside baslar.
-- Yeni surumleri otomatik kontrol edebilir.
-- Tek tusla guncelleme denetleyebilir.
-- Tema, renk, yazi boyutu ve gorunum ayarlarini uygulama icinden degistirir.
-- Ozel logo, arka plan ve CSS destegi verir.
-- Mesajlari daha kompakt veya baloncuklu gosterebilir.
-- Sagdaki uye listesini gizleyip daha fazla alan acabilir.
-- Donanim hizlandirmayi kapatarak kaynak kullanimini azaltabilir.
-- Oyun modunda tepsideyken Discord'u askida tutabilir.
-- Ekran paylasimi icin performans modu sunar.
-- Normal, tasarruf, yayin ve oyun performans profilleri sunar.
-- idgaf temasiyla kirmizi-siyah gorunum verir.
-- Mikrofonu kendi sectigin global kisayolla hizli susturabilir.
-- Ses komutuyla mikrofonu kapatip acabilir.
-- Mikrofon durum rozeti ve ozel ses komutlari sunar.
-- Portable surum ayarlarini kendi klasorunde saklayabilir.
+</div>
 
-## Ayarlar
+---
 
-- Tum ayarlar Discord icindeki idgafcord disli panelindedir.
-- Sistem tepsisi menusunden de temel kontroller kullanilabilir.
-- Ayarlar kayitli kalir.
+## idgafcord nedir?
 
-## Indirme
+Resmî Discord uygulaması ağır, arka planda seni izler ve arayüzü satış odaklıdır.
+**idgafcord**, Discord'u temiz ve hafif bir masaüstü kabuğunda çalıştırır; arkada
+sessizce dönen izleme/telemetri isteklerini **sen daha görmeden engeller** ve
+kontrolü tamamen sana verir. Hesabın, sunucuların, sohbetlerin — hepsi aynı;
+sadece etrafındaki gürültü yok.
 
-- Kurulum isteyenler setup dosyasini kullanir.
-- Kurulum istemeyenler portable zip dosyasini kullanir.
-- En yeni surum GitHub Releases sayfasindadir.
+> Tüm ayarların yerel kalır. Bulut yok, hesap yok, takip yok.
+
+---
+
+## ✨ Öne çıkanlar
+
+### 🔒 Gizlilik önce sen
+- **Telemetri engelleyici** — analiz/izleme istekleri (science, metrics, sentry…) daha ağa çıkmadan durdurulur.
+- **Canlı engelleme paneli** — neyin engellendiğini gerçek zamanlı, kategorili bir terminalde gör.
+- **Nitro & reklam gizleme** — yükseltme/hediye baskısını arayüzden kaldır.
+
+### 🪶 Hafif ve hızlı
+- Elektron şişkinliği yerine yalın bir masaüstü penceresi.
+- **Performans profilleri:** Normal · Tasarruf · Yayın · Oyun.
+- Donanım hızlandırmayı kapatıp kaynak kullanımını kısabilirsin.
+- **Oyun modu:** tepsideyken Discord'u askıya alıp neredeyse sıfır kaynağa iner.
+- **Ekran paylaşımı performans modu** ile daha akıcı yayın.
+
+### 🎙️ Sesle mikrofon kontrolü
+- **“sustur” / “aç”** de — mikrofonun anında kapanıp açılır, ellerine dokunmadan.
+- **Kendi tetik kelimelerini** belirle; doğal varyasyonları da anlar.
+- Sol altta **canlı durum balonu** (dinleniyor / son komut).
+- Kendi seçtiğin **global kısayolla** her yerden anında sustur.
+
+### 🎨 Senin görünümün
+- 14 hazır **tema** (idgaf kırmızı-siyah, Midnight, Tokyo Night, Catppuccin, Nord…) renk önizlemeli seçici ile.
+- Aksan rengi, yazı boyutu, köşe yuvarlaklığı.
+- **Özel logo, arka plan görseli ve CSS** desteği.
+- Kompakt mod, mesaj baloncukları, üye listesini gizleme.
+
+### 🖥️ Sisteme yakışır
+- Kapatınca **sistem tepsisine** küçülür, çalışmaya devam eder.
+- **Windows ile başlat** ve istersen pencere açmadan sessizce tepside bekle.
+- **Otomatik güncelleme:** yeni imzalı sürümler arka planda gelir.
+- **Portable sürüm** ayarlarını kendi klasöründe taşır.
+
+---
+
+## 🚀 Kurulum
+
+1. **[En son sürümü indir](https://github.com/ademiru/idgafcord/releases/latest)**
+2. İki seçenek:
+   - **`...setup.exe`** — kurulum yapar, otomatik güncelleme alır. (Önerilen)
+   - **`...portable.zip`** — kurulum istemeyenler için; `idgafcord.exe` doğrudan çalışır, ayarları yanındaki `data` klasöründe tutar.
+3. Windows “bilinmeyen yayıncı” diyebilir → **Yine de çalıştır** (imzalı kod sertifikası olmadığı için normaldir).
+
+> İlk açılışta bir kurulum kartıyla profilini (Dengeli / Yayın / Gizlilik) tek tıkla seçersin.
+
+---
+
+## ⚙️ Ayarlar nerede?
+
+- Discord içindeki **yüzen dişli** düğmesine tıkla → tüm ayarlar sekmeli, sade bir panelde.
+- Temel kontroller ayrıca **sistem tepsisi** menüsünde.
+- Takılırsan tepsi menüsü → **“Sorun giderme: güvenli yeniden başlat”** her şeyi güvenli sıfırlar.
+
+---
+
+## ❓ SSS
+
+**Hesabım güvende mi?** Evet — idgafcord senin ile Discord arasına girmez, sadece
+resmî Discord'u bir pencerede açar. Hesap bilgilerini görmez, saklamaz, göndermez.
+
+**Ban riski var mı?** idgafcord bir bot ya da otomasyon değildir; arayüzü ve arka
+plan isteklerini yerelde düzenler. Yine de her üçüncü taraf istemci gibi resmî
+olmadığını unutma; kendi tercihinle kullan.
+
+**Sadece Windows mu?** Şu an evet, Windows için paketleniyor.
+
+---
+
+<div align="center">
+
+**idgafcord** — verini umursamayan bir dünyada, verini umursayan bir istemci.
+
+[⬇️ İndir](https://github.com/ademiru/idgafcord/releases/latest) · [🐞 Sorun bildir](https://github.com/ademiru/idgafcord/issues)
+
+</div>

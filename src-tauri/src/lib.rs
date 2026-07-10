@@ -47,10 +47,37 @@ struct Settings {
     game_mode: bool,
     #[serde(default = "default_mute_shortcut")]
     mute_shortcut: String,
+    #[serde(default = "default_language")]
+    language: String,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_language() -> String {
+    "tr".into()
+}
+
+/// Tepsi menüsü etiketleri (dil'e göre). idgafcord arayüzü TR/EN destekler.
+fn tray_label(lang: &str, key: &str) -> &'static str {
+    let en = lang == "en";
+    match key {
+        "tray" => if en { "Minimize to tray on close" } else { "Kapatınca tepsiye küçült" },
+        "startmin" => if en { "Start silently in tray" } else { "Tepside sessiz başlat" },
+        "autostart" => if en { "Start with Windows" } else { "Windows ile başlat" },
+        "stream" => if en { "Screen-share performance (restart)" } else { "Ekran paylaşımı performansı (yeniden başlat)" },
+        "gpu" => if en { "Disable hardware acceleration (restart)" } else { "Donanım hızlandırmayı kapat (yeniden başlat)" },
+        "game" => if en { "Game mode: suspend in tray (notifications pause)" } else { "Oyun modu: tepsideyken askıya al (bildirimler durur)" },
+        "auto_update" => if en { "Check for updates automatically" } else { "Güncellemeleri otomatik denetle" },
+        "settings" => if en { "Settings (theme, privacy)" } else { "Ayarlar (tema, gizlilik)" },
+        "cache" => if en { "Clear cache" } else { "Önbelleği temizle" },
+        "repair" => if en { "Troubleshoot: safe restart" } else { "Sorun giderme: güvenli yeniden başlat" },
+        "update" => if en { "Check for updates" } else { "Güncellemeleri denetle" },
+        "show" => if en { "Show Discord" } else { "Discord'u Göster" },
+        "quit" => if en { "Quit" } else { "Çıkış" },
+        _ => "",
+    }
 }
 
 fn default_mute_shortcut() -> String {
@@ -68,6 +95,7 @@ impl Default for Settings {
             auto_update_check: true,
             game_mode: false,
             mute_shortcut: default_mute_shortcut(),
+            language: default_language(),
         }
     }
 }
@@ -266,6 +294,65 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   // özel CSS ve telemetri engellemesi UYGULANMAZ. Ayarlar localStorage'da korunur;
   // yalnızca bu oturum temiz çalışır. Uygulama yeniden açılınca normale döner.
   var SAFE=false;try{SAFE=sessionStorage.getItem('ldc_safe')==='1';}catch(e){}
+
+  /* ---------------- Dil (TR/EN). Kaynak metinler TR; EN sözlükle çevrilir. ---------------- */
+  var lang=get('lang',/^tr\b/i.test((navigator.language||navigator.userLanguage||''))?'tr':'en');
+  var EN={
+    'Görünüm':'Appearance','Gelişmiş':'Advanced','Sistem':'System','Ses':'Voice','Gizlilik':'Privacy','Tema':'Theme',
+    'Kaydet':'Save','Uygula':'Apply','Dosya':'File','Sıfırla':'Reset','Varsayılan':'Default','Değiştir':'Change','Denetle':'Check','Temizle':'Clear',
+    'Normal':'Normal','Tasarruf':'Saver','Yayın':'Stream','Oyun':'Game','Kapalı':'Off','Yumuşak':'Soft','Köşeli':'Sharp','Dengeli':'Balanced',
+    'Kaydedildi.':'Saved.','Kaydedildi — açılışta görünür.':'Saved — shows on launch.',
+    'Discord yüklenemedi':'Discord didn’t load','İnternet, Discord oturumu veya WebView geçici sorun yaşamış olabilir.':'Your connection, Discord session or the WebView may have hiccuped.','Yenile':'Reload','Kapat':'Close',
+    'Mikrofon düğmesi bulunamadı.':'Mic button not found.','Mikrofon düğmesi bulunamadı':'Mic button not found','Mikrofon düğmesi bulunamadı — ses kanalındayken dene.':'Mic button not found — try while in a voice channel.',
+    'Ses komutu açıldı — dinleniyor.':'Voice command on — listening.','Ses komutu kapatıldı.':'Voice command off.',
+    'Tuşlara bas… (Esc iptal)':'Press keys… (Esc to cancel)','Susturma kısayolu: Ctrl / Alt / Shift + bir tuşa bas. Esc = iptal.':'Mute shortcut: press Ctrl / Alt / Shift + a key. Esc = cancel.','Kısayol değişikliği iptal edildi.':'Shortcut change cancelled.','En az Ctrl, Alt veya Shift ile birlikte bir tuş gerekir.':'You need at least Ctrl, Alt or Shift plus a key.','Kısayol kaydediliyor: ':'Saving shortcut: ',
+    'Sürükle':'Drag','idgafcord ayarları':'idgafcord settings','Görünüm · Sistem · Gizlilik':'Appearance · System · Privacy',
+    'Genel & Gizlilik':'General & Privacy','İlk kurulum':'First-time setup','Başlangıç ayarlarını hızlıca seç. Sonradan hepsi değiştirilebilir.':'Pick your starting setup. You can change everything later.',
+    'Dengeli profil seçildi.':'Balanced profile selected.','Yayın profili seçildi.':'Stream profile selected.','Gizlilik profili seçildi.':'Privacy profile selected.',
+    'Sistem & Güncelleme':'System & Updates','Profil kaydedildi: ':'Profile saved: ','Performans profili teknik ayarları otomatik düzenler. Değişikliklerin tamamı yeniden başlatınca etkili olur.':'The performance profile auto-tunes technical settings. All changes take effect after a restart.',
+    'Kapatınca tepsiye küçült':'Minimize to tray on close','Pencere kapatılınca uygulama tamamen kapanmaz, sistem tepsisinde çalışmaya devam eder.':'Closing the window won’t quit the app; it keeps running in the system tray.',
+    'Windows ile başlat':'Start with Windows','Windows açıldığında idgafcord otomatik başlatılır.':'idgafcord launches automatically when Windows starts.',
+    'Tepside sessiz başlat':'Start silently in tray','Otomatik başlatmada pencere açmadan doğrudan tepside bekler.':'On autostart it waits in the tray without opening a window.',
+    'Ekran paylaşımı performansı':'Screen-share performance','GPU hızlandırmayı açık tutar ve paylaşımda takılma/kalite düşmesini azaltır; 1080/60 izne bağlıdır.':'Keeps GPU acceleration on to reduce stutter/quality drops while sharing; 1080/60 depends on your entitlement.',
+    'Güncellemeleri otomatik denetle':'Check for updates automatically','Başlangıçta ve 6 saatte bir yeni imzalı sürümü kontrol eder.':'Checks for a new signed version at startup and every 6 hours.',
+    'Ses & Mikrofon':'Voice & Mic','Global mikrofon susturma kısayolu':'Global mic-mute shortcut','Uygulama arka planda / tepsideyken bile çalışır. Şu an atalı kısayol:':'Works even when the app is in the background / tray. Current shortcut:',
+    'Varsayılan kısayola dönülüyor: Ctrl/Cmd + Shift + M':'Reverting to the default shortcut: Ctrl/Cmd + Shift + M',
+    'Sesle mikrofon komutu':'Voice mic control','Sürekli dinler; komut duyunca mikrofonu anında aç/kapatır. Sol altta canlı bir durum balonu (dinleniyor / son komut) belirir.':'Always listening; toggles your mic the moment it hears a command. A live status bubble (listening / last command) appears bottom-left.',
+    'Mikrofon durum rozeti':'Mic status badge','Sol altta mikrofon açık/kapalı durumunu küçük rozetle gösterir.':'Shows mic on/off state as a small badge in the bottom-left.',
+    'Sesli komutlar':'Voice commands','Kendi tetik kelimelerini belirle':'Set your own trigger words','Sustur':'Mute','Aç':'Unmute','· duyunca mikrofonu kapatır':'· mutes your mic when heard','· duyunca mikrofonu açar':'· unmutes your mic when heard',
+    'Yeniden başlat':'Restart','Mikrofonu test et':'Test mic','İpucu: bu kelimelerin doğal varyasyonlarını da anlar (ör. “mikrofonu kapatır mısın”). Cümlenin içinde geçmesi yeter.':'Tip: it also understands natural variations (e.g. “can you mute the mic”). It just needs to appear in the sentence.','Ses tanıma yeniden başlatıldı — dinleniyor.':'Voice recognition restarted — listening.','Sesli komutlar kaydedildi.':'Voice commands saved.',
+    'Dinleniyor':'Listening','Kapalı ':'Off ','Durdu (yeniden başlat gerekiyor)':'Stopped (needs restart)','Başlatılıyor…':'Starting…',
+    'Mikrofon açık':'Mic on','Mikrofon kapalı':'Mic off','Mikrofon ?':'Mic ?','Mikrofon kapatıldı':'Mic muted','Mikrofon açıldı':'Mic unmuted','Mikrofon değiştirildi':'Mic toggled','Mikrofon zaten kapalı':'Mic already muted','Mikrofon zaten açık':'Mic already on','Dinleniyor…':'Listening…',
+    'Güncellemeleri denetle':'Check for updates','Şimdi GitHub Releases üzerinden yeni sürüm var mı kontrol eder.':'Checks GitHub Releases for a new version now.','Son kontrol bekleniyor.':'Waiting for first check.','Güncelleme kontrol ediliyor...':'Checking for updates…',
+    'Donanım hızlandırmayı kapat':'Disable hardware acceleration','GPU kaynak kullanımını azaltır; ekran paylaşımı performans modunu kapatır.':'Lowers GPU usage; turns off screen-share performance mode.',
+    'Oyun modu: tepsideyken askıya al':'Game mode: suspend while in tray','Tepsiye küçültülünce Discord bağlantısını tamamen askıya alır; bildirimler durabilir.':'Fully suspends the Discord connection when minimized to tray; notifications may pause.',
+    'Engellenen izleme istekleri':'Blocked tracking requests','Discord arka planda ne yaptığını takip eden istekler gönderir; hepsi ağa çıkmadan engellenir.':'Discord sends requests that track what you do in the background; all are blocked before they reach the network.',
+    'Renk önizlemesine dokunarak seç. Aksan rengini aşağıdan ayrıca değiştirebilirsin.':'Tap a color preview to pick. You can also set the accent color below.','Tema kapatıldı.':'Theme off.','Tema: ':'Theme: ',
+    'Aksan rengi':'Accent color','Aksan rengi güncellendi.':'Accent color updated.','Aksan sıfırlandı.':'Accent reset.','Buton, link ve vurgu rengi. Temadan bağımsızdır.':'Button, link and highlight color. Independent of the theme.',
+    'Kompakt mod':'Compact mode','Mesaj aralıklarını daraltır.':'Tightens message spacing.','Yazı boyutu':'Font size',
+    'Açılış ekranı':'Splash screen','Uygulama açılırken idgafcord logosu ve sloganı gösterilir.':'Shows the idgafcord logo and slogan at startup.',
+    'Yapı & Şekil':'Layout & Shape','Köşe yuvarlaklığı (butonlar, kartlar, menüler, pencereler).':'Corner roundness (buttons, cards, menus, windows).','Köşe stili: ':'Corner style: ',
+    'Özel logo URL (sol üstteki Discord simgesi)':'Custom logo URL (the Discord icon top-left)','Görsel çok büyük (~1.8MB altı olmalı).':'Image too large (must be under ~1.8MB).','Logo (bilgisayardan) uygulandı.':'Logo (from your computer) applied.','Logo sıfırlandı.':'Logo reset.',
+    'Özel font adı (sistemde yüklü olmalı, ör. Inter)':'Custom font name (must be installed, e.g. Inter)','Font uygulandı.':'Font applied.','Font sıfırlandı.':'Font reset.',
+    'Mesaj balonları':'Message bubbles','Mesajları baloncuk (chat) stilinde gösterir.':'Shows messages in a chat-bubble style.','Üye listesini gizle':'Hide member list','Sağdaki üye listesini kapatır (daha çok yer).':'Hides the right-side member list (more room).',
+    'Yıldızlar':'Stars','Yıldızları canlandır':'Animate stars','Sunucu çubuğunda yavaşça kayan yıldız alanı (uzay hissi). Her temayla çalışır.':'A slowly drifting starfield on the server bar (space vibe). Works with any theme.',
+    'Arka plan görseli':'Background image','Görsel çok büyük (~3MB altı olmalı).':'Image too large (must be under ~3MB).','Arka plan (bilgisayardan) uygulandı.':'Background (from your computer) applied.','Arka plan uygulandı.':'Background applied.','Arka plan kaldırıldı.':'Background removed.','Yüzeyler yarı saydam olur, görsel arkada görünür. Kutuyu boşaltıp Uygula ile kaldırılır.':'Surfaces become translucent so the image shows behind. Empty the box and hit Apply to remove.',
+    'Özel tema (CSS)':'Custom theme (CSS)','Özel CSS uygula':'Apply custom CSS','Aşağıdaki düzenleyicideki kuralları uygular.':'Applies the rules in the editor below.','CSS Kaydet & Uygula':'Save & apply CSS','Özel CSS kaydedildi ve uygulandı.':'Custom CSS saved and applied.',
+    'Sistem ayarları bu panelden ve sistem tepsisi menüsünden aynı kayıtlı ayarları değiştirir.':'System settings change the same saved options from this panel and the tray menu.',
+    'Dil':'Language','Türkçe':'Türkçe','English':'English'
+  };
+  function tr(s){if(lang!=='en'||s==null)return s;if(EN[s]!=null)return EN[s];
+    for(var k in EN){if(k.length>2&&k.charAt(k.length-1)===' '&&k.charAt(k.length-2)===':'&&String(s).indexOf(k)===0)return EN[k]+String(s).slice(k.length);}
+    return s;}
+  function translateTree(root){
+    if(lang!=='en'||!root)return;
+    try{
+      var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null,false),n;
+      while(n=w.nextNode()){var raw=n.nodeValue,v=raw.trim();if(v&&EN[v]!=null)n.nodeValue=raw.replace(v,EN[v]);}
+      var i,q=root.querySelectorAll('[placeholder]');for(i=0;i<q.length;i++){var p=q[i].getAttribute('placeholder');if(EN[p]!=null)q[i].setAttribute('placeholder',EN[p]);}
+      var q2=root.querySelectorAll('[title]');for(i=0;i<q2.length;i++){var tt=q2[i].getAttribute('title');if(EN[tt]!=null)q2[i].title=EN[tt];}
+    }catch(e){}
+  }
 
   /* ---------------- Telemetri engelleyici (kategorili + loglu) ---------------- */
   var blockedCount=0,blockedLog=[],catCount={};
@@ -580,8 +667,8 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     return ws.every(function(w){var stem=w.length>=4?w.slice(0,w.length-1):w;return t.indexOf(stem)>=0;});
   }
   function matchVoiceCommand(t){
-    if(phraseHit(t,get('voiceUnmutePhrase','mikrofonu aç')))return 'unmute';
-    if(phraseHit(t,get('voiceMutePhrase','mikrofonu kapat')))return 'mute';
+    if(phraseHit(t,get('voiceUnmutePhrase',lang==='en'?'unmute':'mikrofonu aç')))return 'unmute';
+    if(phraseHit(t,get('voiceMutePhrase',lang==='en'?'mute':'mikrofonu kapat')))return 'mute';
     var mic=/\b(mikrofon\w*|mikp\w*|ses|sesi|sesim\w*|kendimi)\b/.test(t);
     if(/\bunmute\b|\bkonusabilir\w*\b/.test(t))return 'unmute';
     if(mic&&/\b(ac|acar|acsana|acabilir|acalim|geri ?ac|acin)\b/.test(t))return 'unmute';
@@ -614,7 +701,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   function updateMicBadge(){
     if(!micBadge||!ison('micBadge','1'))return;
     var s=micState(),on=s==='live';
-    micBadge.textContent=s==='unknown'?'Mikrofon ?':(on?'Mikrofon açık':'Mikrofon kapalı');
+    micBadge.textContent=tr(s==='unknown'?'Mikrofon ?':(on?'Mikrofon açık':'Mikrofon kapalı'));
     micBadge.style.background=on?'rgba(35,165,90,.92)':'rgba(216,15,18,.92)';
   }
   function ensureMicBadge(){
@@ -627,7 +714,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(!voiceHud){
       voiceHud=mk('div',{position:'fixed',left:'16px',bottom:'52px',zIndex:'2147482997',display:'flex',alignItems:'center',gap:'8px',padding:'7px 13px 7px 11px',borderRadius:'20px',background:'rgba(20,21,24,.93)',border:'1px solid rgba(255,255,255,.09)',boxShadow:'0 8px 26px rgba(0,0,0,.42)',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",fontSize:'12px',fontWeight:'600',color:'#e6e8ea',maxWidth:'320px',pointerEvents:'none',transition:'border-color .18s',backdropFilter:'blur(8px)'});
       voiceHudDot=mk('span',{});voiceHudDot.className='ldc-vdot';
-      voiceHudTxt=mk('span',{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},'Dinleniyor…');
+      voiceHudTxt=mk('span',{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},tr('Dinleniyor…'));
       voiceHud.appendChild(voiceHudDot);voiceHud.appendChild(voiceHudTxt);
       (document.body||document.documentElement).appendChild(voiceHud);
     }
@@ -640,10 +727,10 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   }
   function voiceHudFlash(text,kind){ // kind: 'mute' | 'unmute' | 'heard' | 'warn'
     if(!voiceHud)return;
-    voiceHudTxt.textContent=text;
+    voiceHudTxt.textContent=tr(text);
     voiceHud.style.borderColor=kind==='mute'?'rgba(216,15,18,.65)':(kind==='unmute'?'rgba(35,165,90,.65)':(kind==='warn'?'rgba(240,178,50,.65)':'rgba(255,255,255,.09)'));
     if(voiceHudTimer)clearTimeout(voiceHudTimer);
-    voiceHudTimer=setTimeout(function(){if(voiceHudTxt)voiceHudTxt.textContent='Dinleniyor…';if(voiceHud)voiceHud.style.borderColor='rgba(255,255,255,.09)';},2600);
+    voiceHudTimer=setTimeout(function(){if(voiceHudTxt)voiceHudTxt.textContent=tr('Dinleniyor…');if(voiceHud)voiceHud.style.borderColor='rgba(255,255,255,.09)';},2600);
   }
   // ---- Ses tanıma: BEYAZ EKRAN GÜVENLİ mimari ----
   // Kritik: WebView2'de her döngüde `new SpeechRecognition()` oluşturmak nesne/
@@ -669,7 +756,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   }
   // Handler'lar TEK sefer bağlanır; nesne yeniden kullanıldığı için tekrar kurulmaz.
   function configureRec(r){
-    r.lang=get('voiceLang','tr-TR');r.continuous=true;r.interimResults=true;r.maxAlternatives=3;
+    r.lang=get('voiceLang',lang==='en'?'en-US':'tr-TR');r.continuous=true;r.interimResults=true;r.maxAlternatives=3;
     r.onstart=function(){voiceStarting=false;voiceStartedAt=Date.now();voiceAlive=Date.now();voiceHudState('listen');updateVoiceStatus();};
     r.onresult=function(e){
       voiceFails=0;voiceHardErr=false;voiceAlive=Date.now();
@@ -744,7 +831,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(voiceRec&&!voiceStarting)return 'Dinleniyor';
     return 'Başlatılıyor…';
   }
-  function updateVoiceStatus(){if(voiceStatusEl){var s=voiceStatusText();voiceStatusEl.textContent=s;voiceStatusEl.style.color=(s.indexOf('Durdu')>=0)?C.warn:(s==='Dinleniyor'?'#fff':C.mut);voiceStatusEl.style.background=(s==='Dinleniyor')?C.grn:C.field;voiceStatusEl.style.borderColor=(s==='Dinleniyor')?C.grn:C.line;}}
+  function updateVoiceStatus(){if(voiceStatusEl){var s=voiceStatusText();voiceStatusEl.textContent=tr(s);voiceStatusEl.style.color=(s.indexOf('Durdu')>=0)?C.warn:(s==='Dinleniyor'?'#fff':C.mut);voiceStatusEl.style.background=(s==='Dinleniyor')?C.grn:C.field;voiceStatusEl.style.borderColor=(s==='Dinleniyor')?C.grn:C.line;}}
   // Kendine ait, tasarımlı "Sesli komutlar" kartı: tetik kelimelerini belirlersin.
   var MIC_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
   function buildVoiceCard(){
@@ -777,10 +864,11 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
       });
       wrap.appendChild(chips);return wrap;
     }
-    card.appendChild(cmdRow({title:'Sustur',hint:'· duyunca mikrofonu kapatır',dot:'#f23f42',glow:'rgba(242,63,66,.18)',key:'voiceMutePhrase',def:'mikrofonu kapat',presets:['mikrofonu kapat','sustur','sessiz ol','beni sustur'],assign:function(i){voiceMuteInp=i;}}));
-    card.appendChild(cmdRow({title:'Aç',hint:'· duyunca mikrofonu açar',dot:'#23a55a',glow:'rgba(35,165,90,.18)',key:'voiceUnmutePhrase',def:'mikrofonu aç',top:'14px',presets:['mikrofonu aç','sesimi aç','geri aç','konuşacağım'],assign:function(i){voiceUnmuteInp=i;}}));
+    var EN_L=lang==='en';
+    card.appendChild(cmdRow({title:'Sustur',hint:'· duyunca mikrofonu kapatır',dot:'#f23f42',glow:'rgba(242,63,66,.18)',key:'voiceMutePhrase',def:EN_L?'mute':'mikrofonu kapat',presets:EN_L?['mute','mute me','stop','silence']:['mikrofonu kapat','sustur','sessiz ol','beni sustur'],assign:function(i){voiceMuteInp=i;}}));
+    card.appendChild(cmdRow({title:'Aç',hint:'· duyunca mikrofonu açar',dot:'#23a55a',glow:'rgba(35,165,90,.18)',key:'voiceUnmutePhrase',def:EN_L?'unmute':'mikrofonu aç',top:'14px',presets:EN_L?['unmute','open mic','let me talk','back on']:['mikrofonu aç','sesimi aç','geri aç','konuşacağım'],assign:function(i){voiceUnmuteInp=i;}}));
     var act=mk('div',{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'15px'});
-    var save=mkBtn('Kaydet',true);save.onclick=function(){set('voiceMutePhrase',(voiceMuteInp.value||'').trim()||'mikrofonu kapat');set('voiceUnmutePhrase',(voiceUnmuteInp.value||'').trim()||'mikrofonu aç');say('Sesli komutlar kaydedildi.');};
+    var save=mkBtn('Kaydet',true);save.onclick=function(){set('voiceMutePhrase',(voiceMuteInp.value||'').trim()||(EN_L?'mute':'mikrofonu kapat'));set('voiceUnmutePhrase',(voiceUnmuteInp.value||'').trim()||(EN_L?'unmute':'mikrofonu aç'));say('Sesli komutlar kaydedildi.');};
     var vrestart=mkBtn('Yeniden başlat',false);vrestart.onclick=function(){set('voiceMute','1');if(switches['voiceMute'])switches['voiceMute'].set(true);restartVoice();say('Ses tanıma yeniden başlatıldı — dinleniyor.');};
     var vtest=mkBtn('Mikrofonu test et',false);vtest.onclick=function(){var b=micButton();if(!b){say('Discord’un mikrofon düğmesi bulunamadı — bir ses kanalındayken dene.',C.warn);return;}var s=micState();var lbl=(b.getAttribute('aria-label')||b.getAttribute('title')||b.textContent||'').trim().slice(0,40);say('Buton: “'+lbl+'” · durum: '+(s==='live'?'açık':(s==='muted'?'kapalı':'bilinmiyor'))+'. Sorun sürerse bu yazıyı bana ilet.');};
     act.appendChild(save);act.appendChild(vrestart);act.appendChild(vtest);card.appendChild(act);
@@ -866,7 +954,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(desc)txt.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},desc));
     row.appendChild(txt);row.appendChild(ctrl);return row;
   }
-  function say(m,c){if(statusEl){statusEl.textContent=m||'';statusEl.style.color=c||C.grn;}}
+  function say(m,c){if(statusEl){statusEl.textContent=tr(m)||'';statusEl.style.color=c||C.grn;}}
   function sec(t){var e=mk('div',{fontSize:'11px',textTransform:'uppercase',letterSpacing:'.6px',color:C.mut,fontWeight:'700',margin:'18px 0 4px'},t);e._sec=t;return e;}
   function mkBtn(l,p){var b=mk('button',{background:p?C.acc:C.btn,color:'#fff',border:'none',borderRadius:'6px',padding:'9px 15px',fontSize:'13px',cursor:'pointer',fontWeight:'500',fontFamily:'inherit',whiteSpace:'nowrap',flex:'0 0 auto'},l);hover(b,p?C.acc:C.btn,p?C.accH:C.btnH);return b;}
   function profileFromNative(){if(nativeState.game_mode)return 'game';if(nativeState.stream_performance)return 'stream';if(nativeState.disable_gpu)return 'save';return 'normal';}
@@ -1022,8 +1110,13 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     ht.appendChild(mk('div',{fontSize:'18px',fontWeight:'800',color:C.hl,letterSpacing:'.2px'},'idgafcord'));
     ht.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginTop:'2px'},'Görünüm · Sistem · Gizlilik'));
     hleft.appendChild(logoImg);hleft.appendChild(ht);
+    // Dil anahtarı (TR / EN) — her sekmede görünür.
+    var hright=mk('div',{display:'flex',alignItems:'center',gap:'10px',flex:'0 0 auto'});
+    var langWrap=mk('div',{display:'inline-flex',gap:'2px',padding:'3px',background:C.field,border:'1px solid '+C.line,borderRadius:'9px'});
+    [['tr','TR'],['en','EN']].forEach(function(o){var b=mk('div',{padding:'4px 9px',borderRadius:'6px',fontSize:'12px',fontWeight:'700',cursor:'pointer',color:lang===o[0]?'#fff':C.mut,background:lang===o[0]?C.acc:'transparent',transition:'all .12s'},o[1]);b.onclick=function(){if(lang===o[0])return;setLang(o[0]);};langWrap.appendChild(b);});
     var x=mk('div',{cursor:'pointer',color:'#b5bac1',fontSize:'24px',lineHeight:'1',padding:'2px 8px',borderRadius:'6px',flex:'0 0 auto'},'×');hover(x,'transparent','#3f4147');x.onclick=closePanel;
-    head.appendChild(hleft);head.appendChild(x);
+    hright.appendChild(langWrap);hright.appendChild(x);
+    head.appendChild(hleft);head.appendChild(hright);
 
     var body=mk('div',{padding:'4px 20px 18px',overflowY:'auto'});body.id='ldc-modal-body';
     var tabs=mkTabs(body);
@@ -1172,7 +1265,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.18'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.19'));footEl.appendChild(fb);
 
     card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
     root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
@@ -1180,6 +1273,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     saveBtn.onclick=function(){set('css',themeEl.value);applyAll();say('Özel CSS kaydedildi ve uygulandı.');};
     document.addEventListener('keydown',function(e){if(e.key==='Escape'&&modal&&modal.style.display==='flex')closePanel();});
     applyTabs(body);
+    translateTree(root); // lang==='en' ise tüm paneli İngilizceye çevir
   }catch(e){}}
 
   function refresh(){
@@ -1196,19 +1290,23 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(fontRange){fontRange.value=get('fontsize','16');if(fontVal)fontVal.textContent=get('fontsize','16')+'px';}
     if(bgInp)bgInp.value=get('bgimg','');
     if(themeEl)themeEl.value=get('css','');
-    if(voiceMuteInp)voiceMuteInp.value=get('voiceMutePhrase','mikrofonu kapat');
-    if(voiceUnmuteInp)voiceUnmuteInp.value=get('voiceUnmutePhrase','mikrofonu aç');
+    if(voiceMuteInp)voiceMuteInp.value=get('voiceMutePhrase',lang==='en'?'mute':'mikrofonu kapat');
+    if(voiceUnmuteInp)voiceUnmuteInp.value=get('voiceUnmutePhrase',lang==='en'?'unmute':'mikrofonu aç');
     if(footEl&&footEl._b)footEl._b.textContent=blockedCount+' istek engellendi';
     ensureMicBadge();updateVoiceStatus();
     if(modal){var b=modal.querySelector('#ldc-modal-body');if(b)applyTabs(b);}
   }
   function openPanel(){build();nativeCmd('sync');if(modal){modal.style.display='flex';refresh();renderTerm();if(termTimer)clearInterval(termTimer);termTimer=setInterval(renderTerm,1000);}}
   function closePanel(){if(modal)modal.style.display='none';if(termTimer){clearInterval(termTimer);termTimer=null;}}
+  // Dili değiştir: kaynak TR panel yeniden kurulur; lang==='en' ise translateTree çevirir.
+  function setLang(v){lang=v;set('lang',v);nativeCmd('set','language',v);var r=document.getElementById('ldc-root');if(r&&r.parentNode)r.parentNode.removeChild(r);modal=null;statusEl=null;voiceStatusEl=null;build();openPanel();}
   window.__LDC_openSettings=openPanel;
 
   if(document.body)build();else document.addEventListener('DOMContentLoaded',build);
   if(ison('voiceMute','0'))setTimeout(startVoice,1500);
   setTimeout(ensureMicBadge,1200);
+  // Tepsi menüsü dilini sayfadaki seçili dile eşitle (sonraki açılışta etkili olur).
+  setTimeout(function(){nativeCmd('set','language',lang);},2600);
   // Hafif: yalnızca panel düğmesi kaybolduysa yeniden ekle. CSS'ler adopted
   // sheet olarak kalıcıdır; sürekli yeniden uygulamak gereksiz CPU harcar.
   setInterval(function(){if(document.body&&!document.getElementById('ldc-root'))build();},5000);
@@ -1261,39 +1359,34 @@ pub fn run() {
                 };
                 builder.build(app)?
             };
-            let i_tray = CheckMenuItemBuilder::with_id("t_tray", "Kapatınca tepsiye küçült")
+            let lg = settings.language.clone();
+            let i_tray = CheckMenuItemBuilder::with_id("t_tray", tray_label(&lg, "tray"))
                 .checked(settings.minimize_to_tray)
                 .build(app)?;
-            let i_startmin = CheckMenuItemBuilder::with_id("t_startmin", "Tepside sessiz başlat")
+            let i_startmin = CheckMenuItemBuilder::with_id("t_startmin", tray_label(&lg, "startmin"))
                 .checked(settings.start_minimized)
                 .build(app)?;
-            let i_autostart = CheckMenuItemBuilder::with_id("t_autostart", "Windows ile başlat")
+            let i_autostart = CheckMenuItemBuilder::with_id("t_autostart", tray_label(&lg, "autostart"))
                 .checked(settings.autostart)
                 .build(app)?;
-            let i_stream = CheckMenuItemBuilder::with_id(
-                "t_stream",
-                "Ekran paylaşımı performansı (yeniden başlat)",
-            )
-            .checked(settings.stream_performance)
-            .build(app)?;
-            let i_gpu = CheckMenuItemBuilder::with_id("t_gpu", "Donanım hızlandırmayı kapat (yeniden başlat)")
+            let i_stream = CheckMenuItemBuilder::with_id("t_stream", tray_label(&lg, "stream"))
+                .checked(settings.stream_performance)
+                .build(app)?;
+            let i_gpu = CheckMenuItemBuilder::with_id("t_gpu", tray_label(&lg, "gpu"))
                 .checked(settings.disable_gpu)
                 .build(app)?;
-            let i_game = CheckMenuItemBuilder::with_id("t_game", "Oyun modu: tepsideyken askıya al (bildirimler durur)")
+            let i_game = CheckMenuItemBuilder::with_id("t_game", tray_label(&lg, "game"))
                 .checked(settings.game_mode)
                 .build(app)?;
-            let i_auto_update = CheckMenuItemBuilder::with_id(
-                "t_auto_update",
-                "Güncellemeleri otomatik denetle",
-            )
-            .checked(settings.auto_update_check)
-            .build(app)?;
-            let i_settings = MenuItemBuilder::with_id("settings", "Ayarlar (tema, gizlilik)").build(app)?;
-            let i_cache = MenuItemBuilder::with_id("clear_cache", "Önbelleği temizle").build(app)?;
-            let i_repair = MenuItemBuilder::with_id("repair", "Sorun giderme: güvenli yeniden başlat").build(app)?;
-            let i_update = MenuItemBuilder::with_id("check_update", "Güncellemeleri denetle").build(app)?;
-            let i_show = MenuItemBuilder::with_id("show", "Discord'u Göster").build(app)?;
-            let i_quit = MenuItemBuilder::with_id("quit", "Çıkış").build(app)?;
+            let i_auto_update = CheckMenuItemBuilder::with_id("t_auto_update", tray_label(&lg, "auto_update"))
+                .checked(settings.auto_update_check)
+                .build(app)?;
+            let i_settings = MenuItemBuilder::with_id("settings", tray_label(&lg, "settings")).build(app)?;
+            let i_cache = MenuItemBuilder::with_id("clear_cache", tray_label(&lg, "cache")).build(app)?;
+            let i_repair = MenuItemBuilder::with_id("repair", tray_label(&lg, "repair")).build(app)?;
+            let i_update = MenuItemBuilder::with_id("check_update", tray_label(&lg, "update")).build(app)?;
+            let i_show = MenuItemBuilder::with_id("show", tray_label(&lg, "show")).build(app)?;
+            let i_quit = MenuItemBuilder::with_id("quit", tray_label(&lg, "quit")).build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .items(&[&i_brand])
@@ -1375,6 +1468,10 @@ pub fn run() {
                         if let Some(state) = nav_handle.try_state::<Mutex<Settings>>() {
                             if let Ok(mut s) = state.lock() {
                                 match key.as_str() {
+                                    "language" => {
+                                        // Tepsi etiketleri bir sonraki açılışta bu dile göre kurulur.
+                                        s.language = if value == "en" { "en".into() } else { "tr".into() };
+                                    }
                                     "minimize_to_tray" => {
                                         s.minimize_to_tray = enabled;
                                         let _ = n_tray.set_checked(enabled);

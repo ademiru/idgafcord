@@ -340,6 +340,14 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     'Özel tema (CSS)':'Custom theme (CSS)','Özel CSS uygula':'Apply custom CSS','Aşağıdaki düzenleyicideki kuralları uygular.':'Applies the rules in the editor below.','CSS Kaydet & Uygula':'Save & apply CSS','Özel CSS kaydedildi ve uygulandı.':'Custom CSS saved and applied.',
     'Sistem ayarları bu panelden ve sistem tepsisi menüsünden aynı kayıtlı ayarları değiştirir.':'System settings change the same saved options from this panel and the tray menu.',
     'Dil':'Language','Türkçe':'Türkçe','English':'English'
+    'Yazma göstergesini gizle':'Hide typing indicator','Karşı taraf sen yazarken "yazıyor..." görmez.':'The other side won\'t see "typing..." when you write.',
+    'Markdown önizleme':'Markdown preview','Mesaj yazarken sağ altta canlı önizleme gösterir.':'Shows a live preview bottom-right while typing.',
+    'Ekran paylaşımı kontrolleri':'Screen share controls','Paylaşım yaparken üstte durdurma & filigran çubuğu gösterir.':'Shows a stop & watermark bar at the top while sharing.',
+    'Paylaşıma filigran ekle':'Add watermark to share','Ekran paylaşımına yarı saydam idgafcord filigranı ekler.':'Adds a semi-transparent idgafcord watermark to your screen share.',
+    'Eklentiler':'Plugins','Eklenti yükle':'Install plugin','Eklenti kodu yapıştır…':'Paste plugin code…','Yükle':'Install','Eklenti yok':'No plugins','Henüz bir eklenti yüklenmedi.':'No plugins installed yet.',
+    'sürüm':'version','devre dışı':'disabled','Kaldır':'Remove','Etkinleştir':'Enable','Devre dışı bırak':'Disable',
+    'Eklenti yüklendi: ':'Plugin installed: ','Eklenti kaldırıldı.':'Plugin removed.','Eklenti ':'Plugin ',' etkinleştirildi.':' enabled.',' devre dışı bırakıldı.':' disabled.',
+    'Markdown':'Markdown','Paylaşım':'Sharing',
   };
   function tr(s){if(lang!=='en'||s==null)return s;if(EN[s]!=null)return EN[s];
     for(var k in EN){if(k.length>2&&k.charAt(k.length-1)===' '&&k.charAt(k.length-2)===':'&&String(s).indexOf(k)===0)return EN[k]+String(s).slice(k.length);}
@@ -371,6 +379,147 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   var oo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__ldc=u;return oo.apply(this,arguments);};
   var os=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(blocked(this.__ldc)){try{this.abort();}catch(e){}return;}return os.apply(this,arguments);};
   if(navigator.sendBeacon){var ob=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){if(blocked(u))return true;return ob(u,d);};}
+
+  /* ---------------- Yazma göstergesi engelleyici (WebSocket) ---------------- */
+  // Discord typing event'lerini WebSocket üzerinden filtreler.
+  // op 4 = VOICE_STATE_UPDATE gibi eventler; d.t === 'TYPING_START' → engelle.
+  var _WS=window.WebSocket,_WSp=WebSocket.prototype.send,typingBlocked=0;
+  WebSocket.prototype.send=function(data){
+    if(ison('noTyping','0')){
+      try{
+        var d=typeof data==='string'?JSON.parse(data):data;
+        if(d&&d.op===4&&d.d&&d.d.type==='TYPING_START'){typingBlocked++;return;}
+        if(typeof data==='string'&&data.indexOf('"TYPING_START"')>=0){typingBlocked++;return;}
+      }catch(e){}
+    }
+    return _WSp.apply(this,arguments);
+  };
+
+  /* ---------------- Plugin sistemi (BetterDiscord/Vencord uyumlu) ---------------- */
+  var PLUGINS=[];var PLUGIN_API=null;
+  function initPluginAPI(){
+    var mod={};var exports={};
+    return {
+      get Patcher(){return{injectCSS:function(id,css){var s=document.getElementById('ldc-plugin-'+id);if(!s){s=document.createElement('style');s.id='ldc-plugin-'+id;(document.head||document.documentElement).appendChild(s);}s.textContent=css;},clearCSS:function(id){var s=document.getElementById('ldc-plugin-'+id);if(s&&s.parentNode)s.parentNode.removeChild(s);},after:function(m,p,n,cb){try{var o=m[p];m[p]=function(){var r=o.apply(this,arguments);try{cb.apply(this,[{result:r}].concat(Array.prototype.slice.call(arguments)));}catch(e){}return r;};}catch(e){}},before:function(m,p,cb){try{var o=m[p];m[p]=function(){try{cb.apply(this,arguments);}catch(e){}return o.apply(this,arguments);};}catch(e){}},unpatchAll:function(){}};},
+      get Webpack(){return{getModule:function(filter){var m=null;try{var modules=window.webpackChunkdiscord_app;if(!modules)return null;/* fallback: DOM'dan modül bul */}catch(e){}return m;},findModule:function(f){return null;},getByStrings:function(){return null;},get Store(){return{getAll:function(){return[];}};}};},
+      get React(){return window.React||null;},
+      get ReactDOM(){return window.ReactDOM||null;},
+      get DOM(){return{onRemoved:function(el,cb){var obs=new MutationObserver(function(ms){ms.forEach(function(m){m.removedNodes.forEach(function(n){if(n===el||(n.contains&&n.contains(el))){obs.disconnect();cb();}});});});if(el.parentNode)obs.observe(el.parentNode,{childList:true,subtree:false});return obs;},onAdded:function(el,cb){var obs=new MutationObserver(function(ms){ms.forEach(function(m){m.addedNodes.forEach(function(n){if(n===el||(n.contains&&n.contains(el))){obs.disconnect();cb();}});});});obs.observe(document.body||document.documentElement,{childList:true,subtree:true});return obs;},query:function(s){return document.querySelector(s);},queryAll:function(s){return document.querySelectorAll(s);},createElement:function(tag,cls,props){var e=document.createElement(tag);if(cls)e.className=cls;if(props)for(var k in props)e[k]=props[k];return e;}};},
+      get Data(){return{load:function(k){try{return JSON.parse(LS.getItem('ldc_pd_'+k));}catch(e){return null;}},save:function(k,v){try{LS.setItem('ldc_pd_'+k,JSON.stringify(v));}catch(e){}},delete:function(k){try{LS.removeItem('ldc_pd_'+k);}catch(e){}}};},
+      get UI(){return{showToast:function(msg,opts){say(msg,(opts&&opts.type)==='error'?C.warn:C.grn);},showConfirmation:function(msg,opts){if(confirm(msg))opts.onConfirm();},get Tooltip(){return{create:function(el,text){el.title=text;return{update:function(t){el.title=t;}};}};}};},
+      get Logger(){return{log:function(){console.log.apply(console,arguments);},warn:function(){console.warn.apply(console,arguments);},error:function(){console.error.apply(console,arguments);},info:function(){console.info.apply(console,arguments);}};},
+      get Plugins(){return{get All(){return PLUGINS;},reload:function(){stopPlugins();loadPlugins();},enable:function(id){var p=PLUGINS.find(function(x){return x.id===id;});if(p){p.enabled=true;set('plg_'+id,'1');try{p.plugin.start();}catch(e){}}},disable:function(id){var p=PLUGINS.find(function(x){return x.id===id;});if(p){p.enabled=false;set('plg_'+id,'0');try{p.plugin.stop();}catch(e){}}}};};
+    };
+  }
+  function runPlugin(id,code){
+    try{
+      var mod={exports:{}};var api=PLUGIN_API||initPluginAPI();
+      var fn=new Function('module','exports','BdApi','Vencord','require',code);
+      fn(mod,mod.exports,api,api,function(name){if(name==='@webpack')return api.Webpack;if(name==='@patcher')return api.Patcher;if(name==='@dom')return api.DOM;if(name==='@data')return api.Data;if(name==='@ui')return api.UI;if(name==='@logger')return api.Logger;throw new Error('Plugin module not found: '+name);});
+      var plugin=(mod.exports&&mod.exports.default)?new mod.exports.default():((mod.exports&&typeof mod.exports==='function')?mod.exports():mod.exports);
+      if(!plugin||!plugin.start)return null;
+      return plugin;
+    }catch(e){console.error('[idgafcord] Plugin load error:',id,e);return null;}
+  }
+  function loadPlugins(){
+    PLUGIN_API=PLUGIN_API||initPluginAPI();
+    try{var raw=get('plugins','[]');var list=JSON.parse(raw);if(!Array.isArray(list))list=[];}catch(e){list=[];}
+    PLUGINS=list;
+    list.forEach(function(p){if(p.id&&p.code&&ison('plg_'+p.id,'1')){p.plugin=runPlugin(p.id,p.code);p.enabled=true;if(p.plugin)try{p.plugin.start();}catch(e){}else p.enabled=false;}});
+  }
+  function stopPlugins(){PLUGINS.forEach(function(p){if(p.plugin)try{p.plugin.stop();}catch(e){}p.plugin=null;});}
+  function installPlugin(code,name){
+    try{var meta={};var mf=code.match(/\/\*\s*@name\s+(.+?)\s*\*\//);if(mf)meta.name=mf[1].trim();
+    mf=code.match(/\/\*\s*@version\s+(.+?)\s*\*\//);if(mf)meta.version=mf[1].trim();
+    mf=code.match(/\/\*\s*@description\s+(.+?)\s*\*\//);if(mf)meta.description=mf[1].trim();}catch(e){}
+    var id=(meta.name||name||'plugin_'+Date.now()).replace(/[^a-zA-Z0-9_-]/g,'_').toLowerCase();
+    var p={id:id,name:meta.name||id,version:meta.version||'1.0.0',description:meta.description||'',code:code};
+    var existing=PLUGINS.findIndex(function(x){return x.id===id;});
+    if(existing>=0){PLUGINS[existing]=p;}else{PLUGINS.push(p);}
+    try{LS.setItem('ldc_plugins',JSON.stringify(PLUGINS.map(function(x){return{id:x.id,name:x.name,version:x.version,description:x.description,code:x.code};})));}catch(e){}
+    return p;
+  }
+  function removePlugin(id){
+    var p=PLUGINS.find(function(x){return x.id===id;});
+    if(p&&p.plugin)try{p.plugin.stop();}catch(e){}
+    PLUGINS=PLUGINS.filter(function(x){return x.id!==id;});
+    try{LS.setItem('ldc_plugins',JSON.stringify(PLUGINS.map(function(x){return{id:x.id,name:x.name,version:x.version,description:x.description,code:x.code};})));}catch(e){}
+  }
+
+  /* ---------------- Markdown editör (canlı önizleme) ---------------- */
+  var MD_EDITOR=null;
+  var MD_SIMPLE={bold:function(t){return t.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');},italic:function(t){return t.replace(/\*(.+?)\*/g,'<i>$1</i>');},strike:function(t){return t.replace(/~~(.+?)~~/g,'<s>$1</s>');},underline:function(t){return t.replace(/__(.+?)__/g,'<u>$1</u>');},code:function(t){return t.replace(/`(.+?)`/g,'<code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;font-family:monospace">$1</code>');},codeblock:function(t){return t.replace(/```(\w*)\n([\\s\\S]*?)```/g,'<pre style="background:rgba(0,0,0,.25);padding:10px;border-radius:6px;overflow-x:auto;font-family:monospace;font-size:12px">$2</pre>');},link:function(t){return t.replace(/\\[(.+?)\\]\\((.+?)\\)/g,'<a href="$2" style="color:var(--text-link)" target="_blank">$1</a>');},mention:function(t){return t.replace(/<@!?(\d+)>/g,'<span style="background:rgba(88,101,242,.2);color:var(--text-link);padding:1px 3px;border-radius:3px">@mention</span>');},channel:function(t){return t.replace(/<#(\d+)>/g,'<span style="background:rgba(88,101,242,.2);color:var(--text-link);padding:1px 3px;border-radius:3px">#channel</span>');},emoji:function(t){return t.replace(/<a?:\w+:(\d+)>/g,'<span style="font-size:18px">😀</span>');},bullet:function(t){return t.replace(/^(\s*)[-*]\s+(.+)/gm,'$1• $2');},numbered:function(t){return t.replace(/^(\s*)\d+\.\s+(.+)/gm,'$1• $2');},br:function(t){return t.replace(/\n/g,'<br>');}};
+  function mdPreview(text){if(!text)return '';var t=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');try{t=MD_SIMPLE.codeblock(t);t=MD_SIMPLE.code(t);t=MD_SIMPLE.bold(t);t=MD_SIMPLE.italic(t);t=MD_SIMPLE.strike(t);t=MD_SIMPLE.underline(t);t=MD_SIMPLE.link(t);t=MD_SIMPLE.mention(t);t=MD_SIMPLE.channel(t);t=MD_SIMPLE.emoji(t);t=MD_SIMPLE.bullet(t);t=MD_SIMPLE.numbered(t);t=MD_SIMPLE.br(t);}catch(e){}return t;}
+  function ensureMdEditor(){
+    if(MD_EDITOR&&document.contains(MD_EDITOR))return;
+    MD_EDITOR=mk('div',{position:'fixed',right:'16px',bottom:'160px',zIndex:'2147482990',width:'380px',maxHeight:'280px',background:'rgba(30,31,34,.97)',border:'1px solid '+C.line,borderRadius:'12px',boxShadow:'0 16px 40px rgba(0,0,0,.5)',overflow:'hidden',display:'none',flexDirection:'column',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",color:C.fg,backdropFilter:'blur(14px)'});
+    MD_EDITOR.id='ldc-md-preview';
+    var hd=mk('div',{padding:'10px 14px',borderBottom:'1px solid '+C.line,display:'flex',alignItems:'center',justifyContent:'space-between'});
+    hd.appendChild(mk('div',{fontSize:'12px',fontWeight:'800',color:C.hl,display:'flex',alignItems:'center',gap:'7px'},''));
+    hd.lastChild.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="'+C.acc+'" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Önizleme';
+    var cx=mk('div',{cursor:'pointer',color:C.mut,fontSize:'20px',lineHeight:'1',padding:'2px 6px',borderRadius:'6px'},'×');hover(cx,'transparent','rgba(255,255,255,.06)');cx.onclick=function(){MD_EDITOR.style.display='none';};
+    hd.appendChild(cx);
+    MD_EDITOR._body=mk('div',{padding:'10px 14px',overflowY:'auto',fontSize:'14px',lineHeight:'1.5',minHeight:'60px'});
+    MD_EDITOR.appendChild(hd);MD_EDITOR.appendChild(MD_EDITOR._body);
+    (document.body||document.documentElement).appendChild(MD_EDITOR);
+  }
+  function updateMdPreview(text){
+    ensureMdEditor();MD_EDITOR._body.innerHTML=mdPreview(text)||'<span style="color:'+C.mut+'">Henüz bir şey yazmadın…</span>';
+  }
+  function attachMdToTextarea(){
+    var ta=document.querySelector('[class*="slateTextArea_"] [contenteditable="true"],[role="textbox"][contenteditable="true"],[class*="editor_"] [contenteditable="true"]');
+    if(!ta||ta.__ldcMd)return;
+    ta.__ldcMd=true;
+    ta.addEventListener('input',function(){updateMdPreview(ta.textContent||ta.innerText||'');});
+    ta.addEventListener('focus',function(){if(ison('mdPreview','0')){ensureMdEditor();MD_EDITOR.style.display='flex';updateMdPreview(ta.textContent||ta.innerText||'');}});
+  }
+  setInterval(function(){if(ison('mdPreview','0'))attachMdToTextarea();},3000);
+
+  /* ---------------- Ekran paylaşımı kontrol çubuğu ---------------- */
+  var SS_BAR=null,SS_WATERMARK=null,ssWatcher=null;
+  function ensureSSBar(){
+    if(SS_BAR&&document.contains(SS_BAR))return;
+    SS_BAR=mk('div',{position:'fixed',top:'10px',left:'50%',transform:'translateX(-50%)',zIndex:'2147483005',display:'none',alignItems:'center',gap:'8px',padding:'8px 16px',background:'rgba(17,18,20,.96)',border:'1px solid rgba(255,255,255,.12)',borderRadius:'20px',boxShadow:'0 8px 32px rgba(0,0,0,.45)',backdropFilter:'blur(12px)',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",fontSize:'13px',color:C.hl});
+    SS_BAR.id='ldc-ss-bar';
+    var dot=mk('div',{width:'9px',height:'9px',borderRadius:'50%',background:'#f23f42',flex:'0 0 auto',boxShadow:'0 0 0 3px rgba(242,63,66,.3)'});
+    SS_BAR._status=mk('span',{fontWeight:'600'},'Ekran paylaşılıyor');
+    SS_BAR._timer=mk('span',{color:C.mut,fontSize:'12px'},'');
+    SS_BAR._wmBtn=mk('div',{cursor:'pointer',padding:'4px 10px',borderRadius:'12px',fontSize:'12px',border:'1px solid '+C.line,color:C.mut,transition:'all .14s'},'Filigran');
+    hover(SS_BAR._wmBtn,'transparent',C.field);
+    SS_BAR._wmBtn.onclick=function(){if(ison('ssWatermark','0')){set('ssWatermark','0');SS_BAR._wmBtn.style.borderColor=C.acc;SS_BAR._wmBtn.style.color=C.acc;showWatermark();say('Filigran eklendi.');}else{set('ssWatermark','1');SS_BAR._wmBtn.style.borderColor=C.line;SS_BAR._wmBtn.style.color=C.mut;hideWatermark();say('Filigran kaldırıldı.');}};
+    SS_BAR._stop=mk('div',{cursor:'pointer',padding:'4px 12px',borderRadius:'12px',background:C.red,color:'#fff',fontWeight:'600',fontSize:'12px',transition:'all .14s'},'Durdur');
+    hover(SS_BAR._stop,C.red,'#c93638');
+    SS_BAR._stop.onclick=function(){var btns=document.querySelectorAll('[aria-label*="Stop"],[aria-label*="Durdur"],[aria-label*="Stream"],[aria-label*="Yayın"]');btns.forEach(function(b){try{if(visible(b))b.click();}catch(e){}});};
+    SS_BAR.appendChild(dot);SS_BAR.appendChild(SS_BAR._status);SS_BAR.appendChild(SS_BAR._timer);SS_BAR.appendChild(SS_BAR._wmBtn);SS_BAR.appendChild(SS_BAR._stop);
+    (document.body||document.documentElement).appendChild(SS_BAR);
+  }
+  function showWatermark(){
+    if(SS_WATERMARK)return;
+    SS_WATERMARK=mk('div',{position:'fixed',inset:'0',zIndex:'2147483004',pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'});
+    var tm=mk('div',{color:'rgba(255,255,255,.18)',fontSize:'clamp(24px,5vw,52px)',fontWeight:'800',letterSpacing:'6px',textShadow:'0 0 20px rgba(0,0,0,.5)',transform:'rotate(-15deg)',userSelect:'none',fontFamily:"'Cascadia Code','Consolas',monospace"},'idgafcord');
+    SS_WATERMARK.appendChild(tm);
+    (document.body||document.documentElement).appendChild(SS_WATERMARK);
+  }
+  function hideWatermark(){if(SS_WATERMARK&&SS_WATERMARK.parentNode)SS_WATERMARK.parentNode.removeChild(SS_WATERMARK);SS_WATERMARK=null;}
+  function detectScreenShare(){
+    var indicators=document.querySelectorAll('[class*="streamTile_"],[class*="screen_"],[class*="streamPreview_"],video[class*="stream_"]');
+    var panels=document.querySelectorAll('[class*="panel_"] [class*="live_"]', '[class*="status_"][class*="streaming_"]');
+    return indicators.length>0;
+  }
+  function updateSSBar(){
+    if(!ison('ssControls','1')){if(SS_BAR)SS_BAR.style.display='none';return;}
+    ensureSSBar();
+    if(detectScreenShare()||(SS_BAR._started&&Date.now()-SS_BAR._started<8000)){
+      SS_BAR.style.display='flex';
+      if(!SS_BAR._started){SS_BAR._started=Date.now();if(ison('ssWatermark','0'))showWatermark();}
+      var elapsed=Math.floor((Date.now()-SS_BAR._started)/1000);
+      SS_BAR._timer.textContent=Math.floor(elapsed/60)+':'+('0'+(elapsed%60)).slice(-2);
+    }else{
+      SS_BAR.style.display='none';SS_BAR._started=null;hideWatermark();
+    }
+  }
+  setInterval(function(){if(ison('ssControls','1'))updateSSBar();},3000);
+
 
   /* ---------------- CSS motoru (CSP-geçirmez) ---------------- */
   function Styler(){this.sheet=null;this.el=null;try{this.sheet=new CSSStyleSheet();document.adoptedStyleSheets=[].concat(Array.prototype.slice.call(document.adoptedStyleSheets||[]),[this.sheet]);}catch(e){this.sheet=null;}}
@@ -880,12 +1029,16 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   var GEAR='<svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.9 4.6l1.9 1.5-1.9 3.3-2.3-.9c-.4.4-.9.6-1.4.9l-.3 2.4H9.2l-.3-2.4c-.5-.3-1-.5-1.4-.9l-2.3.9L3.3 14.1l1.9-1.5c0-.2-.1-.4-.1-.6s.1-.4.1-.6L3.3 9.9l1.9-3.3 2.3.9c.4-.4.9-.6 1.4-.9L9.2 4h4.6l.3 2.4c.5.3 1 .5 1.4.9l2.3-.9 1.9 3.3-1.9 1.5c0 .2.1.4.1.6s-.1.4 0 .8z"/></svg>';
   var FT=[
     {k:'block',def:'1',t:'Telemetriyi engelle',d:'Analiz/izleme isteklerini (science, metrics, sentry…) engeller.'},
-    {k:'upsell',def:'0',t:'Nitro & reklamları gizle',d:'Yükseltme/hediye (upsell) öğelerini arayüzden gizler.'}
+    {k:'upsell',def:'0',t:'Nitro & reklamları gizle',d:'Yükseltme/hediye (upsell) öğelerini arayüzden gizler.'},
+    {k:'noTyping',def:'0',t:'Yazma göstergesini gizle',d:'Karşı taraf sen yazarken "yazıyor..." görmez.'},
+    {k:'mdPreview',def:'0',t:'Markdown önizleme',d:'Mesaj yazarken sağ altta canlı önizleme gösterir.'},
+    {k:'ssControls',def:'1',t:'Ekran paylaşımı kontrolleri',d:'Paylaşım yaparken üstte durdurma & filigran çubuğu gösterir.'},
+    {k:'ssWatermark',def:'0',t:'Paylaşıma filigran ekle',d:'Ekran paylaşımına yarı saydam idgafcord filigranı ekler.'}
   ];
   var THEME_OPTS=[{v:'off',l:'Kapalı'},{v:'idgaf',l:'idgaf'},{v:'midnight',l:'Midnight'},{v:'space',l:'Uzay'},{v:'dracula',l:'Dracula'},{v:'nord',l:'Nord'},{v:'catppuccin',l:'Catppuccin'},{v:'amoled',l:'AMOLED'},{v:'tokyonight',l:'Tokyo Night'},{v:'gruvbox',l:'Gruvbox'},{v:'solarized',l:'Solarized'},{v:'rosepine',l:'Rosé Pine'},{v:'synthwave',l:'Synthwave'},{v:'monokai',l:'Monokai'}];
   var PROFILE_OPTS=[{v:'normal',l:'Normal'},{v:'save',l:'Tasarruf'},{v:'stream',l:'Yayın'},{v:'game',l:'Oyun'}];
   var RADIUS_OPTS=[{v:'normal',l:'Normal'},{v:'soft',l:'Yumuşak'},{v:'sharp',l:'Köşeli'}];
-  var C={bg:'#313338',fg:'#dbdee1',hl:'#f2f3f5',mut:'#949ba4',acc:'#5865F2',accH:'#4752c4',grn:'#23a55a',line:'#232428',line2:'#3a3c41',field:'#1e1f22',btn:'#4e5058',btnH:'#6d6f78',warn:'#f0b232',red:'#f23f42'};
+  var C={bg:'#1e1f22',fg:'#dbdee1',hl:'#f2f3f5',mut:'#949ba4',acc:'#5865F2',accH:'#4752c4',grn:'#23a55a',line:'#2b2d31',line2:'#3a3c41',field:'#2b2d31',btn:'#4e5058',btnH:'#6d6f78',warn:'#f0b232',red:'#f23f42',glass:'rgba(30,31,34,.82)',glass2:'rgba(43,45,49,.55)'};
   function st(el,o){for(var k in o){el.style[k]=o[k];}return el;}
   function mk(tag,o,txt){var e=document.createElement(tag);if(o)st(e,o);if(txt!=null)e.textContent=txt;return e;}
   function hover(el,a,b){el.addEventListener('mouseenter',function(){el.style.background=b;});el.addEventListener('mouseleave',function(){el.style.background=a;});}
@@ -964,10 +1117,12 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     privacy:'<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
     theme:'<svg viewBox="0 0 24 24"><path d="M12 2.7l5.3 5.3a7.5 7.5 0 1 1-10.6 0z"/></svg>',
     look:'<svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>',
-    advanced:'<svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'
+    advanced:'<svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+    plugins:'<svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+    markdown:'<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>'
   };
   function mkTabs(body){
-    var opts=[{v:'system',l:'Sistem'},{v:'voice',l:'Ses'},{v:'privacy',l:'Gizlilik'},{v:'theme',l:'Tema'},{v:'look',l:'Görünüm'},{v:'advanced',l:'Gelişmiş'}];
+    var opts=[{v:'system',l:'Sistem'},{v:'voice',l:'Ses'},{v:'privacy',l:'Gizlilik'},{v:'theme',l:'Tema'},{v:'look',l:'Görünüm'},{v:'markdown',l:'Markdown'},{v:'plugins',l:'Eklentiler'},{v:'advanced',l:'Gelişmiş'}];
     var bar=mk('div',{display:'flex',gap:'4px',padding:'12px 16px 14px',borderBottom:'1px solid '+C.line,overflowX:'auto',background:'linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0))'});
     bar.className='ldc-tabbar';
     opts.forEach(function(o){
@@ -988,6 +1143,8 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(/Özel tema/.test(t))return 'advanced';
     if(/Tema|Aksan/.test(t))return 'theme';
     if(/Görünüm|Yapı|Yıldız|Arka/.test(t))return 'look';
+    if(/Eklenti/.test(t))return 'plugins';
+    if(/Markdown|Önizleme/.test(t))return 'markdown';
     return activeTab;
   }
   function applyTabs(body){
@@ -1108,7 +1265,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     logoImg.src=get('logo','')||LDC_LOGO_DATA_URI;logoImg.alt='';logoImg.onerror=function(){logoImg.src=LDC_LOGO_DATA_URI;};
     var ht=mk('div',{minWidth:'0'});
     ht.appendChild(mk('div',{fontSize:'18px',fontWeight:'800',color:C.hl,letterSpacing:'.2px'},'idgafcord'));
-    ht.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginTop:'2px'},'Görünüm · Sistem · Gizlilik'));
+    ht.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginTop:'2px'},'Görünüm · Sistem · Gizlilik · Eklentiler'));
     hleft.appendChild(logoImg);hleft.appendChild(ht);
     // Dil anahtarı (TR / EN) — her sekmede görünür.
     var hright=mk('div',{display:'flex',alignItems:'center',gap:'10px',flex:'0 0 auto'});
@@ -1261,6 +1418,48 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     tb.appendChild(saveBtn);body.appendChild(tb);
 
     var note=mk('div',{fontSize:'12px',color:C.mut,marginTop:'16px',lineHeight:'1.4'},'Sistem ayarları bu panelden ve sistem tepsisi menüsünden aynı kayıtlı ayarları değiştirir.');
+
+    /* ---------------- Eklenti yöneticisi ---------------- */
+    body.appendChild(sec('Eklentiler'));
+    body.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',lineHeight:'1.4',marginBottom:'8px'},'BetterDiscord / Vencord uyumlu eklentiler yükleyip yönetebilirsin.'));
+    var plugInstall=mk('div',{display:'flex',gap:'8px',marginBottom:'14px'});
+    var plugCodeInp=mk('textarea',{flex:'1',boxSizing:'border-box',background:C.field,color:C.fg,border:'1px solid '+C.line,borderRadius:'10px',padding:'10px 12px',fontSize:'12px',fontFamily:'Consolas,monospace',resize:'vertical',height:'80px'});
+    plugCodeInp.placeholder='Eklenti kodu yapıştır…';plugCodeInp.spellcheck=false;
+    var plugNameInp=mk('input',{flex:'0 0 auto',boxSizing:'border-box',background:C.field,color:C.fg,border:'1px solid '+C.line,borderRadius:'10px',padding:'10px 12px',fontSize:'12px',width:'130px'});
+    plugNameInp.type='text';plugNameInp.placeholder='Eklenti adı';
+    var plugBtns=mk('div',{display:'flex',flexDirection:'column',gap:'6px'});
+    var plugInstallBtn=mkBtn('Yükle',true);plugInstallBtn.onclick=function(){var code=plugCodeInp.value.trim();if(!code){say('Eklenti kodu gerekli.',C.warn);return;}var name=plugNameInp.value.trim();var p=installPlugin(code,name);plugCodeInp.value='';plugNameInp.value='';say('Eklenti yüklendi: '+p.name);renderPluginList();};
+    var plugLoadAll=mkBtn('Tümünü yükle',false);plugLoadAll.onclick=function(){stopPlugins();loadPlugins();renderPluginList();say('Eklentiler yeniden yüklendi.');};
+    plugBtns.appendChild(plugInstallBtn);plugBtns.appendChild(plugLoadAll);
+    plugInstall.appendChild(plugCodeInp);plugInstall.appendChild(mk('div',{display:'flex',flexDirection:'column',gap:'6px'},plugNameInp));plugInstall.appendChild(plugBtns);
+    body.appendChild(plugInstall);
+    var plugList=mk('div',{});plugList.id='ldc-plug-list';body.appendChild(plugList);
+    function renderPluginList(){
+      plugList.innerHTML='';
+      if(!PLUGINS.length){plugList.appendChild(mk('div',{textAlign:'center',padding:'28px 0',color:C.mut},'Henüz bir eklenti yüklenmedi.'));return;}
+      PLUGINS.forEach(function(p){
+        var row=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',marginBottom:'6px',background:C.field,border:'1px solid '+C.line,borderRadius:'10px',gap:'12px'});
+        var info=mk('div',{flex:'1',minWidth:'0'});
+        info.appendChild(mk('div',{fontSize:'13px',fontWeight:'700',color:C.hl},p.name));
+        var meta=mk('div',{fontSize:'11px',color:C.mut,marginTop:'2px'},'v'+p.version+(p.description?' · '+p.description:''));
+        info.appendChild(meta);
+        var actions=mk('div',{display:'flex',gap:'6px',flex:'0 0 auto'});
+        var toggle=ison('plg_'+p.id,'1');
+        var tog=mkBtn(toggle?'Devre dışı bırak':'Etkinleştir',toggle);
+        var rmv=mkBtn('Kaldır',false);
+        tog.onclick=function(){
+          var cur=ison('plg_'+p.id,'1');
+          if(cur){set('plg_'+p.id,'0');if(p.plugin)try{p.plugin.stop();}catch(e){}p.enabled=false;say('Eklenti '+p.name+' devre dışı bırakıldı.');}
+          else{set('plg_'+p.id,'1');if(!p.plugin){p.plugin=runPlugin(p.id,p.code);}if(p.plugin)try{p.plugin.start();}catch(e){}p.enabled=true;say('Eklenti '+p.name+' etkinleştirildi.');}
+          renderPluginList();
+        };
+        rmv.onclick=function(){removePlugin(p.id);renderPluginList();say('Eklenti kaldırıldı.');};
+        actions.appendChild(tog);actions.appendChild(rmv);
+        row.appendChild(info);row.appendChild(actions);plugList.appendChild(row);
+      });
+    }
+    renderPluginList();
+
     body.appendChild(note);
     statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
 
@@ -1274,11 +1473,9 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     document.addEventListener('keydown',function(e){if(e.key==='Escape'&&modal&&modal.style.display==='flex')closePanel();});
     applyTabs(body);
     translateTree(root); // lang==='en' ise tüm paneli İngilizceye çevir
-  }catch(e){}}
-
   function refresh(){
     FT.forEach(function(o){if(switches[o.k])switches[o.k].set(ison(o.k,o.def));});
-    ['compact','stars','cssOn','bubbles','hideMembers','voiceMute'].forEach(function(k){if(switches[k])switches[k].set(ison(k,'0'));});
+    ['compact','stars','cssOn','bubbles','hideMembers','voiceMute','noTyping','mdPreview','ssControls','ssWatermark'].forEach(function(k){if(switches[k])switches[k].set(ison(k,'0'));});
     if(switches['micBadge'])switches['micBadge'].set(ison('micBadge','1'));
     if(switches['splash'])switches['splash'].set(ison('splash','1'));
     if(themePills)themePills.set(get('theme','off'));
@@ -1295,6 +1492,9 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(footEl&&footEl._b)footEl._b.textContent=blockedCount+' istek engellendi';
     ensureMicBadge();updateVoiceStatus();
     if(modal){var b=modal.querySelector('#ldc-modal-body');if(b)applyTabs(b);}
+    if(ison('noTyping','0')){if(!typingBlocked)typingBlocked=0;}
+    if(ison('ssControls','1'))updateSSBar();
+    try{var pl=document.getElementById('ldc-plug-list');if(pl&&typeof renderPluginList==='function')renderPluginList();}catch(e){}
   }
   function openPanel(){build();nativeCmd('sync');if(modal){modal.style.display='flex';refresh();renderTerm();if(termTimer)clearInterval(termTimer);termTimer=setInterval(renderTerm,1000);}}
   function closePanel(){if(modal)modal.style.display='none';if(termTimer){clearInterval(termTimer);termTimer=null;}}
@@ -1311,6 +1511,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   // sheet olarak kalıcıdır; sürekli yeniden uygulamak gereksiz CPU harcar.
   setInterval(function(){if(document.body&&!document.getElementById('ldc-root'))build();},5000);
   setInterval(updateMicBadge,2500);
+  setTimeout(function(){loadPlugins();},5000);
 })();"####;
 
 const MUTE_TOGGLE_SCRIPT: &str = r#"

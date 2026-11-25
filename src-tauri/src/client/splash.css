@@ -1,0 +1,33 @@
+#ldc-splash {
+  position: fixed; inset: 0; z-index: 2147483600;
+  display: grid; place-items: center; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 38%, #123f54 0, #091c2d 40%, #06101c 78%);
+  color: #effbff; font-family: "Segoe UI", system-ui, sans-serif;
+}
+[data-ldc-aero="light"] #ldc-splash {
+  background: radial-gradient(ellipse at 50% 32%, #fff 0, #e2f7ff 32%, #a9def0 72%, #7cc6d5);
+  color: #12415b;
+}
+#ldc-splash::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 15% 110%, rgba(103,194,138,.17), transparent 53%), radial-gradient(ellipse at 92% 10%, rgba(66,198,244,.1), transparent 48%);
+}
+#ldc-splash.out { pointer-events: none; animation: ldc-sp-exit .32s ease-in forwards; }
+#ldc-splash .ldc-sp-wrap { position: relative; text-align: center; padding: 32px; max-width: calc(100vw - 64px); }
+.ldc-sp-orb { position: relative; display: grid; place-items: center; width: 132px; height: 132px; margin: 0 auto 25px; animation: ldc-sp-orb .65s cubic-bezier(.16,1,.3,1) both; }
+.ldc-sp-mark { width: 128px; height: 128px; object-fit: contain; }
+.ldc-sp-logo { font-size: clamp(34px, 5vw, 48px); line-height: 1.1; letter-spacing: -.055em; font-weight: 400; animation: ldc-sp-copy .65s .1s both; }
+.ldc-sp-logo b { font-weight: 760; }
+.ldc-sp-logo span { opacity: .73; }
+.ldc-sp-tag { margin-top: 14px; font-size: 9px; font-weight: 600; letter-spacing: .19em; opacity: .45; animation: ldc-sp-copy .65s .2s both; }
+.ldc-sp-status { margin-top: 35px; display: flex; gap: 8px; align-items: center; justify-content: center; font-size: 11px; letter-spacing: .03em; opacity: .7; }
+.ldc-sp-dot { width: 5px; height: 5px; border-radius: 50%; background: #50cbe7; box-shadow: 0 0 0 4px rgba(80,203,231,.1); animation: ldc-sp-pulse 1.2s ease-in-out 2; }
+.ldc-sp-foot { margin-top: 20px; font-size: 9px; opacity: .35; letter-spacing: .08em; }
+@keyframes ldc-sp-exit { to { opacity: 0; } }
+@keyframes ldc-sp-orb { from { opacity: 0; transform: translateY(12px) scale(.9); } to { opacity: 1; transform: none; } }
+@keyframes ldc-sp-copy { from { opacity: 0; transform: translateY(6px); } to { transform: none; } }
+@keyframes ldc-sp-pulse { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) {
+  #ldc-splash, #ldc-splash *, #ldc-splash *::before, #ldc-splash *::after { animation: none !important; transform: none !important; }
+  #ldc-splash.out { opacity: 0; }
+}

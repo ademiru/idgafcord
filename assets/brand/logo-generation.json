@@ -1,0 +1,7 @@
+{
+  "tool": "Built-in image_gen",
+  "date": "2026-11-25",
+  "asset": "../../logo-1024.png",
+  "prompt": "Use case: logo-brand. Asset: final 1024x1024 transparent PNG application symbol for idgafcord, a lightweight privacy-conscious Discord desktop client. Create ONE original, highly legible icon, no presentation board. An elegant simple aqua-blue glass chat-bubble silhouette with a short precisely cut tail at its lower right, containing a bold white geometric lowercase i: one clean square dot above one straight stem. Authentic restrained 2006 Windows Aero craft: rich deep ocean blue at the lower edge, luminous cyan upper glass, a thin crisp pale rim, a single smooth upper-surface specular reflection, very subtle depth. Strong deliberate geometry and generous clear white symbol, recognizable at 16px. The icon itself occupies 85 percent of the square, optically centered, front facing. Transparent pixels outside the icon. Must work on both pale ice blue and dark ocean UI backgrounds. No surrounding app tile, no enclosing circle, no wordmark, no other letters or words, no slogan, no Discord controller or face, no lock or shield, no mascot, no sparkles, no orbital rings, no decorative objects, no purple, no neon glow, no large drop shadow, no mockup. Polished software icon, quiet and intentional rather than generic AI branding.",
+  "processing": "Generated with transparency; scaled and platform icons built with Tauri icon CLI. The UI embeds the 256px icon to keep the initialization script small."
+}

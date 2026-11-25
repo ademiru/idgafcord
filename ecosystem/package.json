@@ -1,0 +1,13 @@
+{
+  "name": "idgafcord-ecosystem",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:assets": "node ../scripts/prepare-ecosystem.mjs",
+    "dev": "npm run prepare:assets && wrangler dev --config wrangler.jsonc",
+    "bundle:check": "npm run prepare:assets && wrangler deploy --dry-run --config wrangler.example.jsonc --outdir ../src-tauri/target/ecosystem-worker",
+    "deploy": "npm run prepare:assets && wrangler deploy --config wrangler.jsonc"
+  },
+  "devDependencies": { "wrangler": "4.168.0" }
+}

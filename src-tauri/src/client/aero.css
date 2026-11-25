@@ -1,0 +1,343 @@
+/* Static scenery, restrained glass, no remote assets or continuous animation. */
+:root[data-ldc-aero] {
+  --aero-sky: #73cff1;
+  --aero-ink: #14384e;
+  --aero-muted: #41677c;
+  --aero-surface: rgba(244, 253, 255, .91);
+  --aero-side: rgba(219, 244, 250, .92);
+  --aero-strong: #f6fcff;
+  --aero-line: rgba(33, 112, 143, .28);
+  --aero-shine: rgba(255, 255, 255, .9);
+  --aero-blue: #0078a8;
+  --aero-select: linear-gradient(180deg, #fff 0%, #e0f9ff 45%, #b1e6f5 48%, #c7f4fb 100%);
+  --aero-shadow: 0 5px 16px rgba(8, 66, 100, .14), inset 0 1px 0 var(--aero-shine);
+  --aero-glass: 10px;
+  --aero-bubble-fill: linear-gradient(180deg, #ffffff 0%, #ecfaff 24%, #d7eff7 52%, #e2f5fb 100%);
+  --aero-bubble-shadow: inset 0 1px 0 #fff, 0 2px 4px #164d6810;
+  --aero-scene-tint: rgba(131, 222, 242, .1);
+  --aero-link: #00668c;
+  --ldc-ui-bg: var(--aero-surface); --ldc-ui-field: var(--aero-strong);
+  --ldc-ui-fg: var(--aero-ink); --ldc-ui-hl: var(--aero-ink); --ldc-ui-muted: var(--aero-muted);
+  --ldc-ui-line: var(--aero-line); --ldc-ui-line2: var(--aero-line);
+  --ldc-ui-accent: #0078a8; --ldc-ui-accent-hover: #00658d;
+  --ldc-ui-button: #32768d; --ldc-ui-button-hover: #25667c;
+  --ldc-ui-glass: var(--aero-surface); --ldc-ui-glass2: var(--aero-side);
+  color-scheme: light;
+}
+:root[data-ldc-aero="dark"] {
+  --aero-sky: #061321;
+  --aero-ink: #e0f5fb;
+  --aero-muted: #a4cbd7;
+  --aero-surface: rgba(5, 18, 31, .87);
+  --aero-side: rgba(7, 24, 39, .94);
+  --aero-strong: #0b2032;
+  --aero-bubble: rgba(17, 39, 57, .94);
+  --aero-bubble-fill: linear-gradient(180deg, #23465bcc 0%, #153247ed 27%, #102a3ef5 52%, #17364af5 100%);
+  --aero-bubble-shadow: inset 0 1px 0 #bce7f027, inset 0 -1px 0 #06132160, 0 2px 5px #0003;
+  --aero-line: rgba(126, 190, 211, .20);
+  --aero-shine: rgba(176, 218, 235, .12);
+  --aero-blue: #68bfd5;
+  --aero-select: linear-gradient(180deg, #234759 0%, #153448 46%, #102a3b 49%, #16384b 100%);
+  --aero-shadow: 0 6px 20px rgba(0, 12, 25, .26), inset 0 1px 0 var(--aero-shine);
+  --aero-scene-tint: rgba(0, 21, 41, .78);
+  --aero-link: #88c9dd;
+  --ldc-ui-accent: #1e5871; --ldc-ui-accent-hover: #2b6b85;
+  --ldc-ui-button: #244559; --ldc-ui-button-hover: #315b71;
+  color-scheme: dark;
+}
+:root[data-ldc-aero-fx="0"] { --aero-glass: 0px; --aero-surface: var(--aero-strong); }
+:root[data-ldc-aero] :is(.theme-dark, .theme-darker, .theme-midnight, .theme-light),
+:root[data-ldc-aero] {
+  --font-primary: "Segoe UI", "gg sans", system-ui, sans-serif !important;
+  --font-display: "Segoe UI", "gg sans", system-ui, sans-serif !important;
+  --font-headline: "Segoe UI", Tahoma, system-ui, sans-serif !important;
+  --text-normal: var(--aero-ink) !important;
+  --text-primary: var(--aero-ink) !important;
+  --text-default: var(--aero-ink) !important;
+  --header-primary: var(--aero-ink) !important;
+  --header-secondary: var(--aero-muted) !important;
+  --text-muted: var(--aero-muted) !important;
+  --text-secondary: var(--aero-muted) !important;
+  --channels-default: var(--aero-muted) !important;
+  --interactive-normal: var(--aero-muted) !important;
+  --interactive-hover: var(--aero-ink) !important;
+  --interactive-active: var(--aero-ink) !important;
+  --interactive-icon-default: var(--aero-muted) !important;
+  --interactive-icon-hover: var(--aero-ink) !important;
+  --interactive-text-default: var(--aero-muted) !important;
+  --interactive-text-hover: var(--aero-ink) !important;
+  --text-link: var(--aero-link) !important;
+  --input-background: var(--aero-strong) !important;
+  --input-border: var(--aero-line) !important;
+  --background-modifier-hover: color-mix(in srgb, var(--aero-blue) 9%, transparent) !important;
+  --background-modifier-selected: color-mix(in srgb, var(--aero-blue) 16%, transparent) !important;
+  --background-mod-subtle: color-mix(in srgb, var(--aero-blue) 7%, transparent) !important;
+  --background-mentioned: color-mix(in srgb, var(--aero-blue) 9%, transparent) !important;
+  --background-mentioned-hover: color-mix(in srgb, var(--aero-blue) 14%, transparent) !important;
+  --button-secondary-background: var(--aero-side) !important;
+  --button-secondary-text: var(--aero-ink) !important;
+  --button-secondary-background-hover: var(--aero-strong) !important;
+  --scrollbar-thin-thumb: var(--aero-line) !important;
+  --scrollbar-thin-track: transparent !important;
+  --scrollbar-auto-thumb: var(--aero-line) !important;
+  --scrollbar-auto-track: transparent !important;
+  --background-code: var(--aero-strong) !important;
+  --background-surface-high: var(--aero-strong) !important;
+  --background-surface-higher: var(--aero-strong) !important;
+  --background-surface-highest: var(--aero-strong) !important;
+  --text-positive: var(--aero-blue) !important;
+  --text-feedback-positive: var(--aero-blue) !important;
+  --icon-feedback-positive: var(--aero-blue) !important;
+  --background-code-addition: rgba(30, 151, 93, .14) !important;
+  --background-code-deletion: rgba(210, 53, 61, .13) !important;
+  --background-message-hover: color-mix(in srgb, var(--aero-blue) 5%, transparent) !important;
+  --chat-background-default: transparent !important;
+  --radius-xs: 5px !important; --radius-sm: 9px !important;
+  --radius-md: 13px !important; --radius-lg: 18px !important;
+}
+:root[data-ldc-aero] :is(#app-mount, [class*="appMount_"]) {
+  background: linear-gradient(var(--aero-scene-tint), var(--aero-scene-tint)),
+    radial-gradient(ellipse at 94% 115%, #99d447 0 22%, transparent 22.3%),
+    radial-gradient(ellipse at -12% 138%, #50b89b 0 36%, transparent 36.3%),
+    radial-gradient(ellipse at 68% -18%, rgba(255,255,255,.95) 0 15%, transparent 48%),
+    linear-gradient(162deg, #4ab8ed, #c2f1fa 52%, #5baec7 78%, #67b96a) !important;
+}
+:root[data-ldc-aero] :is([class*="app_"], [class*="appAsidePanelWrapper_"], [class*="base_"], [class*="bg_"]) {
+  background: transparent !important;
+}
+:root[data-ldc-aero="dark"] #app-mount {
+  background: linear-gradient(#06132133,#06132133), url("data:image/jpeg;base64,__LDC_NIGHT_CITY_URI__") center / cover no-repeat !important;
+}
+:root[data-ldc-aero] {
+  --status-speaking: var(--aero-blue) !important;
+  --icon-voice: var(--aero-blue) !important;
+  --text-voice: var(--aero-muted) !important;
+}
+:root[data-ldc-aero] [class*="modeConnected_"] :is([class*="icon_"],[class*="name_"]) { color: var(--aero-blue) !important; }
+:root[data-ldc-aero] [class*="sidebarList_"] :is([class*="voiceChannelTimer_"],[class*="voiceChannelElapsedTime_"],[class*="timeCounter_"],[class*="timer_"]) {
+  color: var(--aero-muted) !important; font-family: "Segoe UI",Tahoma,sans-serif !important;
+  font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: .02em;
+}
+:root[data-ldc-aero] :is([class*="bar_"][class*="titleBar_"], [class*="titleBar_"] > [class*="trailing_"]) {
+  background: var(--aero-side) !important;
+  color: var(--aero-muted) !important;
+}
+:root[data-ldc-aero] :is([class*="username_"], [class*="channelName_"], [class*="name_"][class*="overflow_"]) { font-weight: 600; letter-spacing: normal; }
+:root[data-ldc-aero] [class*="messageContent_"] { line-height: 1.5 !important; }
+:root[data-ldc-aero] [class*="timestamp_"] { font-variant-numeric: tabular-nums; }
+:root[data-ldc-aero] :is([class*="userPopoutOuter_"], [class*="userProfileOuter_"]) { --background-surface-high: var(--aero-strong); --background-floating: var(--aero-strong); }
+:root[data-ldc-aero] :is([class*="guilds_"]) {
+  background: linear-gradient(180deg, var(--aero-side), color-mix(in srgb, var(--aero-side) 85%, transparent)) !important;
+  border-right: 1px solid var(--aero-line);
+  box-shadow: inset -1px 0 0 var(--aero-shine);
+}
+:root[data-ldc-aero] :is([class*="sidebarList_"], [class*="privateChannels_"], [class*="sidebar_"]) {
+  background: var(--aero-side) !important;
+  border-right: 1px solid var(--aero-line);
+}
+:root[data-ldc-aero] :is([class*="chat_"], [class*="chatContent_"]) {
+  background: var(--aero-surface) !important;
+  min-width: 0;
+}
+:root[data-ldc-aero] :is([class*="chatContent_"], [class*="messagesWrapper_"], [class*="scrollerInner_"], [class*="chatGradient_"]) {
+  background: transparent !important;
+}
+:root[data-ldc-aero] :is([class*="title_"][class*="container_"], [class*="sidebar_"] header, [class*="sidebarList_"] header, [class*="searchBar_"]) {
+  background: linear-gradient(180deg, var(--aero-shine), transparent 58%), var(--aero-side) !important;
+  border-bottom: 1px solid var(--aero-line);
+  box-shadow: inset 0 1px 0 var(--aero-shine), 0 2px 8px rgba(0, 60, 90, .05) !important;
+}
+:root[data-ldc-aero] :is([class*="membersWrap_"], [class*="members_"]) {
+  background: var(--aero-side) !important;
+  border-left: 1px solid var(--aero-line);
+}
+:root[data-ldc-aero] [class*="member_"] { background: transparent !important; }
+:root[data-ldc-aero] :is([class*="content_"][class*="channel_"], [class*="interactive_"]) {
+  border: 1px solid transparent;
+  border-radius: 5px !important;
+  transition: background-color .14s ease, border-color .14s ease;
+}
+:root[data-ldc-aero] :is([class*="modeSelected_"] [class*="link_"], [class*="interactiveSelected_"], [aria-selected="true"][role="tab"]) {
+  background: var(--aero-select) !important;
+  border: 1px solid var(--aero-line) !important;
+  border-radius: 5px !important;
+  box-shadow: inset 0 1px 0 var(--aero-shine), 0 2px 5px rgba(0, 65, 96, .08);
+  color: var(--aero-ink) !important;
+}
+/* Unread scroll wrappers are full-width surfaces; leave their own paint intact. */
+:root[data-ldc-aero] [class*="pill_"] > [class*="item_"] { background-color: var(--aero-blue) !important; }
+:root[data-ldc-aero] :is([class*="panels_"], [class*="accountPanel_"]) {
+  background: linear-gradient(180deg, var(--aero-shine), transparent 42%), var(--aero-side) !important;
+  border: 1px solid var(--aero-line) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--aero-shadow);
+}
+:root[data-ldc-aero] [class*="channelTextArea_"] {
+  background: var(--aero-strong) !important;
+  border: 1px solid var(--aero-line) !important;
+  border-radius: 8px !important;
+  box-shadow: inset 0 2px 5px rgba(0, 65, 96, .07), 0 1px 0 var(--aero-shine);
+}
+:root[data-ldc-aero] [class*="channelTextArea_"]:focus-within {
+  border-color: var(--aero-blue) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--aero-blue) 20%, transparent), inset 0 1px 4px rgba(0, 65, 96, .05);
+}
+:root[data-ldc-aero] :is([class*="scrollableContainer_"], [class*="themedBackground_"]) { background: transparent !important; }
+:root[data-ldc-aero] :is([class*="placeholder_"], [class*="timestamp_"]) { color: var(--aero-muted) !important; }
+:root[data-ldc-aero] [class*="message_"][data-list-item-id]:hover {
+  background: var(--background-message-hover) !important;
+}
+:root[data-ldc-aero] :is([class*="embedFull_"], [class*="attachment_"]) {
+  background: var(--aero-side) !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 1px 0 var(--aero-shine);
+}
+:root[data-ldc-aero] [class*="embedFull_"] {
+  border: 1px solid var(--aero-line) !important;
+  padding: 4px !important;
+  overflow: hidden;
+}
+:root[data-ldc-aero] [class*="embedFull_"] [class*="embedMedia_"] { border-radius: 7px; overflow: hidden; }
+/* All decorative gloss is painted in the control's own box, never a click overlay. */
+:root[data-ldc-aero] [data-list-id="guildsnav"] [data-list-item-id^="guildsnav___"] {
+  border-radius: 16px;
+  outline-offset: 3px;
+  transition: box-shadow 150ms ease;
+}
+:root[data-ldc-aero] [data-list-id="guildsnav"] [data-list-item-id^="guildsnav___"]:is([aria-selected="true"],[aria-current="page"]) {
+  outline: 1px solid var(--aero-line);
+  box-shadow: 0 2px 6px #0003;
+}
+:root[data-ldc-aero] [data-list-id="guildsnav"] [class*="folderPreviewWrapper_"] {
+  background: var(--aero-select) !important;
+  border-radius: 16px;
+  box-shadow: inset 0 1px 0 var(--aero-shine);
+}
+:root[data-ldc-aero] [data-list-id="guildsnav"] [class*="circleIconButton_"] {
+  background: var(--aero-select) !important;
+  color: var(--aero-ink) !important;
+}
+:root[data-ldc-aero] [data-list-id="guildsnav"] [class*="numberBadge_"] {
+  border: 2px solid var(--aero-strong);
+  box-shadow: 0 1px 3px #0005;
+}
+:root[data-ldc-aero] [data-list-id="guildsnav"] [data-list-item-id^="guildsnav___"] img[class*="icon_"] {
+  border-radius: 50%; outline: 1px solid var(--aero-line); outline-offset: -1px;
+}
+:root[data-ldc-aero] #ldc-gear { display: none !important; }
+:root[data-ldc-aero] [class*="repliedMessage_"] :is([class*="replyAvatar_"], [class*="repliedAvatar_"], [class*="username_"], [class*="replyAuthor_"]) { flex-shrink: 0 !important; }
+:root[data-ldc-aero] [class*="repliedMessage_"] :is([class*="repliedTextPreview_"], [class*="repliedTextContent_"]) {
+  display: block !important; flex: 1 1 auto !important; min-width: 0 !important;
+  white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important;
+  color: var(--aero-muted) !important; line-height: 20px !important;
+}
+:root[data-ldc-aero] [class*="repliedMessage_"] [class*="messageContent_"] {
+  display: inline !important; padding: 0 !important; margin: 0 !important; border: 0 !important;
+  border-radius: 0 !important; box-shadow: none !important; background: none !important;
+  white-space: inherit !important; font-size: inherit !important; line-height: inherit !important;
+}
+/* Quiet glass rim: the artwork and hit target remain still. */
+:root[data-ldc-aero] [data-list-item-id^="guildsnav___"]:not([data-list-item-id="guildsnav___home"]) {
+  position: relative; isolation: isolate; transform: none; filter: none;
+}
+:root[data-ldc-aero] [data-list-item-id^="guildsnav___"]:not([data-list-item-id="guildsnav___home"])::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; z-index: 2;
+  background: radial-gradient(ellipse 90% 46% at 50% 0%, #e2f9ff26, transparent 76%);
+  box-shadow: inset 0 1px 0 #ddf6ff55, inset 0 -1px 0 #020d1950, inset 0 0 0 1px var(--aero-line);
+  opacity: 0; transition: opacity 150ms ease;
+}
+:root[data-ldc-aero] [data-list-item-id^="guildsnav___"]:not([data-list-item-id="guildsnav___home"]):is(:hover,:focus-visible)::after { opacity: 1; }
+:root[data-ldc-aero] [data-ldc-home-item] { min-height: 68px !important; display: grid; place-items: center; overflow: visible; }
+:root[data-ldc-aero] :is([data-ldc-home-wrap],[data-ldc-home-svg]) {
+  width: 54px !important; height: 54px !important; overflow: visible !important;
+}
+:root[data-ldc-aero] [data-ldc-home-viewport] { overflow: visible !important; mask: none !important; clip-path: none !important; }
+:root[data-ldc-aero] [data-list-item-id="guildsnav___home"] {
+  width: 54px !important; height: 54px !important; background: transparent !important;
+  border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+  transform: none; filter: none;
+}
+:root[data-ldc-aero] [data-ldc-home-viewport] [data-list-item-id="guildsnav___home"] { width: 100% !important; height: 100% !important; }
+:root[data-ldc-aero] [data-list-item-id="guildsnav___home"] :is([class*="childWrapper_"], [class*="wrapper_"]) { background: transparent !important; box-shadow: none !important; border-radius: 0 !important; }
+:root[data-ldc-aero] [data-list-item-id="guildsnav___home"]::after {
+  background-size: 100% !important; filter: drop-shadow(0 2px 3px #0004); z-index: 1;
+}
+:root[data-ldc-aero] [data-list-item-id="guildsnav___home"]::before { content: none; }
+:root[data-ldc-aero-fx="0"] [data-list-item-id^="guildsnav___"]::before,
+:root[data-ldc-aero-fx="0"] [data-list-item-id^="guildsnav___"]:not([data-list-item-id="guildsnav___home"])::after { display: none; }
+:root[data-ldc-aero-fx="0"] [data-list-item-id^="guildsnav___"] { transform: none !important; filter: none !important; }
+:root[data-ldc-aero] [data-ldc-discord-settings] {
+  background: linear-gradient(180deg, var(--aero-shine), transparent 84px), var(--aero-surface) !important;
+  border: 1px solid var(--aero-line); border-radius: 14px; box-shadow: 0 18px 56px #0005, inset 0 1px 0 var(--aero-shine);
+  --background-primary: var(--aero-strong); --background-secondary: var(--aero-side);
+  --background-surface-high: var(--aero-strong); --background-surface-higher: var(--aero-strong);
+  --background-mod-subtle: color-mix(in srgb, var(--aero-blue) 9%, transparent);
+}
+:root[data-ldc-aero] [data-ldc-settings-nav] :is(a,button,[role="link"]):hover { background: var(--aero-select) !important; color: var(--aero-ink) !important; }
+:root[data-ldc-aero] [data-ldc-settings-nav] :is([aria-current="page"],[class*="selected_"]) { background: var(--aero-select) !important; box-shadow: inset 0 1px 0 var(--aero-shine); }
+:root[data-ldc-aero] [data-ldc-discord-settings] :is(input,select,textarea) { background: var(--aero-strong); color: var(--aero-ink); border-color: var(--aero-line); }
+:root[data-ldc-aero] :is([class*="reaction_"]) {
+  background: var(--aero-strong) !important;
+  border: 1px solid var(--aero-line) !important;
+  border-radius: 8px !important;
+}
+:root[data-ldc-aero] [class*="reactionMe_"] { background: var(--aero-select) !important; border-color: var(--aero-blue) !important; }
+:root[data-ldc-aero] :is([class*="markup_"] code, [class*="markup_"] pre) {
+  background: var(--aero-strong) !important;
+  border-color: var(--aero-line) !important;
+  border-radius: 8px;
+}
+:root[data-ldc-aero] :is([role="menu"], [class*="messagesPopoutWrap_"], [class*="userPopoutOuter_"], [class*="tooltip_"], [class*="emojiPicker_"], [class*="contentWrapper_"]) {
+  background: var(--aero-surface) !important;
+  color: var(--aero-ink) !important;
+  border: 1px solid var(--aero-line) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--aero-shadow) !important;
+  backdrop-filter: blur(var(--aero-glass));
+}
+:root[data-ldc-aero] :is([class*="standardSidebarView_"], [class*="contentRegion_"], [class*="sidebarRegion_"]) {
+  background: var(--aero-surface) !important;
+}
+:root[data-ldc-aero] :is([class*="item_"][role="menuitem"], [role="menuitemcheckbox"]) { border-radius: 8px !important; }
+:root[data-ldc-aero] :is(button, [role="button"], input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--aero-blue) !important;
+  outline-offset: 3px;
+}
+:root[data-ldc-aero] :is([class*="lookFilled_"][class*="colorBrand_"], .ldc-aero-tools button) {
+  background: linear-gradient(180deg, #68d1f5 0%, #2ba7d4 45%, #0079ae 49%, #139aca 100%) !important;
+  border: 1px solid #086e98 !important;
+  border-radius: 5px !important;
+  color: #fff !important;
+  text-shadow: 0 1px 1px rgba(0, 44, 70, .5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 2px 5px rgba(0,70,100,.15);
+}
+:root[data-ldc-aero] :is(.ldc-aero-tools button:hover, [class*="lookFilled_"][class*="colorBrand_"]:hover) { filter: brightness(1.08); }
+:root[data-ldc-aero="dark"] [class*="lookFilled_"][class*="colorBrand_"] {
+  background: var(--aero-select) !important;
+  border-color: var(--aero-line) !important;
+  color: var(--aero-ink) !important;
+  box-shadow: inset 0 1px 0 var(--aero-shine);
+}
+:root[data-ldc-aero] .ldc-aero-tools button[aria-pressed="true"] { background: var(--aero-select) !important; color: var(--aero-ink) !important; text-shadow: none; }
+:root[data-ldc-aero] :is(#ldc-gear, #ldc-modal > div) {
+  background: var(--aero-surface) !important;
+  color: var(--aero-ink) !important;
+  border: 1px solid var(--aero-line) !important;
+  box-shadow: var(--aero-shadow) !important;
+  backdrop-filter: blur(var(--aero-glass)) !important;
+}
+:root[data-ldc-aero] #ldc-modal :is(input, textarea, select) { background: var(--aero-strong) !important; color: var(--aero-ink) !important; border-color: var(--aero-line) !important; }
+:root[data-ldc-aero] #ldc-modal [data-ldc-muted]:not(button) { color: var(--aero-muted) !important; }
+:root[data-ldc-aero] #ldc-modal button[aria-selected="true"] { background: var(--aero-select) !important; color: var(--aero-ink) !important; box-shadow: inset 0 1px 0 var(--aero-shine) !important; border-color: var(--aero-line) !important; }
+:root[data-ldc-aero-focus="1"] :is([class*="membersWrap_"], [class*="nowPlayingColumn_"]) { display: none !important; }
+:root[data-ldc-aero] ::selection { background: #0078a8; color: white; }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root[data-ldc-aero] { --aero-glass: 0px; --aero-surface: var(--aero-strong); --aero-side: var(--aero-strong); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ldc-aero] :is([role="button"], button, [class*="interactive_"], [data-list-item-id^="guildsnav___"]) { transition: none !important; transform: none !important; }
+  :root[data-ldc-aero] [data-list-item-id^="guildsnav___"]::after { transition: none !important; }
+}
+@media (forced-colors: active) {
+  :root[data-ldc-aero] :is(button, [role="button"], input, [role="menu"], [class*="channelTextArea_"]) { forced-color-adjust: auto; border: 1px solid ButtonText !important; box-shadow: none !important; }
+}

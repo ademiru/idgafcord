@@ -1,18 +1,3 @@
-const { invoke } = window.__TAURI__.core;
-
-let greetInputEl;
-let greetMsgEl;
-
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsgEl.textContent = await invoke("greet", { name: greetInputEl.value });
-}
-
-window.addEventListener("DOMContentLoaded", () => {
-  greetInputEl = document.querySelector("#greet-input");
-  greetMsgEl = document.querySelector("#greet-msg");
-  document.querySelector("#greet-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    greet();
-  });
-});
+const appearance=window.__LDC_STARTUP__;
+if(appearance){document.documentElement.style.backgroundColor=appearance.background;document.documentElement.style.color=appearance.foreground;document.documentElement.style.colorScheme=appearance.dark?'dark':'light';}
+requestAnimationFrame(()=>requestAnimationFrame(()=>location.replace('https://discord.com/app')));

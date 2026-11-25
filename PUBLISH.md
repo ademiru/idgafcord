@@ -1,5 +1,20 @@
 # idgafcord — Yayınlama & Güncelleme Rehberi
 
+## Standart Windows setup
+
+```powershell
+npm run version:set -- 0.2.4
+npm run build:setup
+```
+
+Çıktı: `src-tauri/target/release/bundle/nsis/idgafcord_<versiyon>_x64-setup.exe`.
+
+Yeni setup eski sürümü aynı konumdan `/UPDATE /S` ile kaldırıp yeni program dosyalarını kurar. Discord'un kullanıcı veri klasörleri, ayarlar ve eski indirilen ses modelleri korunur. Kurulumla gelen `voice/` program kaynakları yeni sürümle değiştirilir. Uygulama kimliği `com.ademiru.idgafcord`, ürün adı ve ana exe adı değiştirilmemelidir. Kurulum yolu sürüm numarası içermez.
+
+`scripts/test-installer.ps1`, ayrı bir test kimliğiyle 0.2.3 → package.json sürümü yükseltmesini gerçek NSIS kurulumları üzerinden sınar. Eski kaynak dosyasının silinmesini, farklı exe'nin yüklenmesini ve temsili oturum/ayar/model verilerinin hash'lerinin korunmasını doğrular. Gerçek kullanıcı hesabı kullanılmaz.
+
+Bu komut özel anahtar gerektirmeyen normal setup üretir. Arka planda imzalı otomatik güncelleme yayını için aşağıdaki özel anahtarlı release akışı kullanılır. Windows yayıncı imzası ve Tauri güncelleme imzası ayrı işlemlerdir.
+
 Uygulama, GitHub Releases üzerinden otomatik güncellenir. Güncelleme adresi
 uygulamaya gömülüdür:
 
@@ -13,6 +28,10 @@ yeniden başlatır. Aynı menüdeki **"Güncellemeleri denetle"** komutu manuel
 kontrol için durur.
 
 ---
+
+## İmza anahtarı olmadan ön sürüm
+
+Normal setup, GitHub Releases üzerinde `--prerelease --latest=false` ile yayınlanabilir. Bu durumda kurulum elle indirilir; `latest.json` üretilmez ve mevcut imzalı otomatik güncelleme kanalı değiştirilmez. Özel anahtar olmadan sahte veya boş imzalı güncelleme manifesti yükleme.
 
 ## Tek seferlik kurulum (GitHub deposu)
 
@@ -48,8 +67,7 @@ Release assets içinde durur.
 
 Her yeni sürümde:
 
-1. `src-tauri/tauri.conf.json` içindeki `"version"` değerini artır
-   (ör. `0.1.0` → `0.1.1`).
+1. `npm run version:set -- 0.2.1` çalıştır. Bu komut npm, Cargo, iki kilit dosyası ve Tauri sürümlerini birlikte günceller. Panel sürümü Cargo'dan otomatik gelir.
 2. Proje kökünde çalıştır:
    ```powershell
    .\make-release.ps1

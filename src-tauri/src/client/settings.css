@@ -1,0 +1,107 @@
+#ldc-modal { color-scheme: dark; }
+#ldc-photo-tools { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 4px; max-width: calc(100vw - 32px); flex-wrap: wrap; justify-content: center; padding: 6px 8px; border: 1px solid var(--ldc-control-line); border-radius: 8px; background: var(--ldc-control-bg); color: var(--ldc-control-ink); box-shadow: inset 0 1px 0 #ffffff0b,0 6px 22px #0006; font: 12px/1.4 "Segoe UI",sans-serif; }
+#ldc-photo-tools * { box-sizing: border-box; }
+#ldc-photo-tools strong { font-size: 11px; font-weight: 600; padding: 0 6px; }
+#ldc-photo-tools .ldc-photo-dimensions { font: 11px Consolas,monospace; color: var(--ldc-control-muted); padding: 0 8px; border-right: 1px solid var(--ldc-control-line); }
+#ldc-photo-tools output { min-width: 38px; text-align: center; font: 11px Consolas,monospace; }
+#ldc-photo-tools button { min-width: 30px; height: 30px; padding: 3px 7px; font: 14px/20px "Segoe UI",sans-serif; background: transparent; border: 1px solid transparent; border-radius: 4px; color: inherit; cursor: pointer; }
+#ldc-photo-tools button:hover,#ldc-photo-tools button[aria-pressed="true"] { border-color: var(--ldc-control-line); background: color-mix(in srgb,var(--ldc-control-accent) 13%,transparent); }
+#ldc-photo-tools button:focus-visible { outline: 2px solid var(--ldc-control-accent); outline-offset: 1px; }
+/* idgafcord controls follow the selected theme, including non-Aero themes. */
+:root { --ldc-control-accent: var(--aero-blue,var(--brand-500,#68bfd5)); --ldc-control-bg: var(--aero-strong,var(--background-secondary,#18202b)); --ldc-control-ink: var(--aero-ink,var(--text-normal,#e0e3e8)); --ldc-control-muted: var(--aero-muted,var(--text-muted,#aab5c4)); --ldc-control-line: var(--aero-line,var(--background-modifier-accent,#ffffff22)); }
+:root[data-ldc-hide-events] [data-ldc-server-shortcut="events"],:root[data-ldc-hide-members] [data-ldc-server-shortcut="members"],:root[data-ldc-hide-boosts] [data-ldc-server-shortcut="boosts"] { display: none !important; }
+:root:not([data-ldc-safe]) [class*="sidebarList_"] :is([class*="voiceChannelTimer_"],[class*="voiceChannelElapsedTime_"],[class*="timeCounter_"],[class*="channelInfo_"] [class*="timer_"]) { box-sizing: border-box; flex: none; min-width: 61px; padding: 4px 7px !important; margin-inline-start: 6px; border: 1px solid var(--ldc-control-line); border-radius: 4px; background: linear-gradient(180deg,#0002,#0000),var(--ldc-control-bg); color: var(--ldc-control-accent) !important; box-shadow: inset 0 1px 3px #0004,inset 0 -1px 0 #ffffff09; font: 600 11px/15px Consolas,"Cascadia Mono",monospace !important; font-variant-numeric: tabular-nums !important; font-feature-settings: "tnum"; letter-spacing: .06em; text-align: center; white-space: nowrap; }
+:root:not([data-ldc-safe]) [class*="panels_"] { background: var(--ldc-control-bg) !important; border: 1px solid var(--ldc-control-line) !important; border-radius: 8px; box-shadow: inset 0 1px 0 #ffffff0b,0 3px 12px #0002; }
+:root:not([data-ldc-safe]) [class*="panels_"] :is([class*="container_"]:has([class*="avatarWrapper_"]),[class*="accountPanel_"],.account) { background: transparent !important; background-image: none !important; border-radius: 0 0 8px 8px; border-top: 1px solid var(--ldc-control-line); padding-top: 9px; }
+:root:not([data-ldc-safe]) [class*="panels_"] :is([class*="connection_"],[class*="activityPanel_"],[class*="panel_"]) { background: transparent !important; }
+:root:not([data-ldc-safe]) [class*="panels_"] :is([class*="actionButtons_"],[class*="buttons_"]) button { border-radius: 5px; box-shadow: none; transition: background-color .15s ease,border-color .15s ease; }
+:root:not([data-ldc-safe]) [class*="panels_"] [class*="actionButtons_"] button { background: color-mix(in srgb,var(--ldc-control-accent) 7%,var(--ldc-control-bg)) !important; border: 1px solid var(--ldc-control-line); min-height: 30px; color: var(--ldc-control-ink); }
+:root:not([data-ldc-safe]) [class*="panels_"] [class*="actionButtons_"] button:hover { background: color-mix(in srgb,var(--ldc-control-accent) 15%,var(--ldc-control-bg)) !important; border-color: var(--ldc-control-accent); }
+:root:not([data-ldc-safe]) [class*="panels_"] :is([class*="rtcConnectionStatusConnected_"],[class*="rtcConnectionQualityFine_"]) { color: var(--ldc-control-accent) !important; }
+:root:not([data-ldc-safe]) [class*="message_"]:is([class*="mentioned_"],[class*="replying_"],[class*="ephemeral_"]) { background: color-mix(in srgb,var(--ldc-control-accent) 9%,transparent) !important; }
+:root:not([data-ldc-safe]) [class*="message_"]:is([class*="mentioned_"],[class*="replying_"])::before { background: var(--ldc-control-accent) !important; width: 2px; opacity: .65; }
+:root:not([data-ldc-safe]) [class*="message_"][class*="mentioned_"]:hover { background: color-mix(in srgb,var(--ldc-control-accent) 14%,transparent) !important; }
+:root:not([data-ldc-safe]) [class*="message_"]:is([class*="jumped_"],[class*="highlighted_"],[class*="backgroundFlash_"]) { --background-message-highlight: color-mix(in srgb,var(--ldc-control-accent) 14%,transparent); background: var(--background-message-highlight) !important; box-shadow: inset 2px 0 var(--ldc-control-accent); animation: ldc-message-arrival 1.3s ease-out !important; }
+@keyframes ldc-message-arrival { from { background-color: color-mix(in srgb,var(--ldc-control-accent) 27%,transparent); box-shadow: inset 2px 0 var(--ldc-control-accent),inset 0 0 25px color-mix(in srgb,var(--ldc-control-accent) 8%,transparent); } to { background-color: color-mix(in srgb,var(--ldc-control-accent) 14%,transparent); box-shadow: inset 2px 0 var(--ldc-control-accent); } }
+#ldc-share-menu { position: fixed; inset: 0; z-index: 2147483100; background: #0008; display: grid; place-items: center; padding: 16px; color: var(--ldc-control-ink); font: 14px/1.5 "Segoe UI",sans-serif; }
+#ldc-share-menu * { box-sizing: border-box; }
+#ldc-share-menu section { width: 460px; max-width: 100%; max-height: calc(100vh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--ldc-control-line); border-radius: 12px; background: var(--ldc-control-bg); box-shadow: inset 0 1px 0 #ffffff0e,0 20px 70px #0007; }
+#ldc-share-menu header { display: flex; gap: 12px; align-items: center; }
+#ldc-share-menu header img { width: 42px; height: 42px; }
+#ldc-share-menu small { color: var(--ldc-control-muted); font-size: 11px; }
+#ldc-share-menu h2 { font-size: 21px; font-weight: 600; margin: 0; }
+#ldc-share-menu p { color: var(--ldc-control-muted); font-size: 13px; margin: 16px 0; }
+#ldc-share-menu label { display: block; font-size: 12px; margin: 14px 0; }
+#ldc-share-menu select { display: block; width: 100%; margin-top: 6px; padding: 9px 10px; color: var(--ldc-control-ink); background: var(--ldc-control-bg); border: 1px solid var(--ldc-control-line); border-radius: 5px; font: inherit; }
+#ldc-share-menu .ldc-share-audio { display: flex; align-items: center; gap: 8px; }
+#ldc-share-menu input { accent-color: var(--ldc-control-accent); }
+#ldc-share-menu .ldc-share-hint { font-size: 11px; padding-top: 12px; border-top: 1px solid var(--ldc-control-line); }
+#ldc-share-menu footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+#ldc-share-menu button { padding: 8px 13px; color: var(--ldc-control-ink); border: 1px solid var(--ldc-control-line); border-radius: 5px; background: transparent; font: 600 12px "Segoe UI",sans-serif; cursor: pointer; }
+#ldc-share-menu button:hover { background: color-mix(in srgb,var(--ldc-control-accent) 12%,transparent); }
+#ldc-share-menu .ldc-share-primary { background: color-mix(in srgb,var(--ldc-control-accent) 25%,var(--ldc-control-bg)); border-color: var(--ldc-control-accent); }
+#ldc-share-menu :focus-visible { outline: 2px solid var(--ldc-control-accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { :root:not([data-ldc-safe]) [class*="message_"][class] { animation: none !important; } }
+.ldc-discord-settings-section { list-style: none; margin: 8px 0 14px; padding: 0 0 12px; border-bottom: 1px solid var(--aero-line,var(--background-modifier-accent,#ffffff20)); }
+.ldc-discord-settings-label { padding: 6px 10px 7px; color: var(--aero-muted,var(--text-muted,#abb3bf)); font-family: var(--font-primary,"Segoe UI",sans-serif); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+#ldc-discord-settings-open { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 38px; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 7px 10px; background: transparent; color: var(--aero-ink,var(--interactive-normal,#e0e3e8)); font: 600 14px var(--font-primary,"Segoe UI",sans-serif); text-align: left; cursor: pointer; }
+#ldc-discord-settings-open img { flex: none; object-fit: contain; pointer-events: none; }
+#ldc-discord-settings-open:hover { background: var(--aero-select,var(--background-modifier-hover,#ffffff10)); border-color: var(--aero-line,transparent); }
+#ldc-discord-settings-open:focus-visible { outline: 2px solid var(--aero-blue,var(--brand-500,#5865f2)); outline-offset: 2px; }
+.ldc-audio-status { display: inline-flex; align-items: center; justify-content: center; position: relative; flex: 0 0 auto; width: 28px; height: 26px; padding: 4px; border-radius: 50%; border: 1px solid transparent; background: transparent; color: var(--aero-muted,var(--text-muted,#aab5c4)); cursor: pointer; }
+.ldc-audio-status:hover { background: var(--aero-select,var(--background-modifier-hover,#ffffff10)); border-color: var(--aero-line,#ffffff20); color: var(--aero-ink,var(--text-normal,#e0e3e8)); }
+.ldc-audio-status:focus-visible { outline: 2px solid var(--aero-blue,#68bfd5); outline-offset: 2px; }
+.ldc-audio-status[data-mic="live"] { color: var(--aero-blue,#78b9c8); }
+.ldc-audio-status[data-phase="error"]::after,.ldc-audio-status[data-phase="missing"]::after { content: ""; position: absolute; right: 1px; bottom: 2px; width: 5px; height: 5px; border-radius: 50%; background: #d8b66f; box-shadow: 0 0 0 2px var(--aero-strong,#142332); pointer-events: none; }
+[data-ldc-aero="light"] #ldc-modal { color-scheme: light; }
+.ldc-settings-card { box-sizing: border-box; width: 920px; max-width: calc(100vw - 40px); height: min(760px, calc(100vh - 40px)); }
+.ldc-settings-head { box-sizing: border-box; flex: 0 0 56px; min-height: 56px; height: 56px; padding: 8px 18px !important; }
+.ldc-settings-head img { width: 30px !important; height: 30px !important; }
+.ldc-settings-layout { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.ldc-settings-nav { width: 164px; flex: 0 0 164px; flex-direction: column; gap: 4px; padding: 18px 10px; border-right: 1px solid var(--ldc-ui-line, #353b43); overflow: hidden; background: var(--ldc-ui-glass2, rgba(0,0,0,.12)); }
+.ldc-settings-nav button { width: 100%; min-height: 38px; text-align: left; justify-content: flex-start; padding: 9px 11px !important; border-radius: 5px !important; }
+#ldc-modal-body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 4px 26px 24px !important; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ldc-ui-line2, #56616d) transparent; }
+#ldc-modal-body > div { box-sizing: border-box; }
+.ldc-settings-foot { box-sizing: border-box; flex: 0 0 30px; min-height: 30px; height: 30px; padding: 5px 18px !important; line-height: 18px; font-size: 11px !important; align-items: center; gap: 12px; }
+.ldc-settings-foot [role="status"] { font-size: 11px !important; }
+#ldc-header-settings { box-sizing: border-box; display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 28px; padding: 3px 9px; border: 1px solid var(--aero-line,var(--background-modifier-accent,#ffffff22)); border-radius: 6px; background: var(--aero-select,var(--background-modifier-hover,#ffffff10)); color: var(--aero-ink,var(--text-normal,#e0e3e8)); font: 600 11px/18px var(--font-primary,"Segoe UI",sans-serif); letter-spacing: normal; cursor: pointer; }
+#ldc-header-settings:hover { border-color: var(--aero-blue,#68bfd5); }
+#ldc-header-settings:focus-visible { outline: 2px solid var(--aero-blue,#68bfd5); outline-offset: 2px; }
+#ldc-header-settings svg { flex: none; pointer-events: none; }
+#ldc-modal :is(input, textarea, select, button) { box-sizing: border-box; }
+#ldc-modal :is(input, textarea, select) { max-width: 100%; }
+#ldc-modal button:focus-visible, #ldc-modal [role="switch"]:focus-visible { outline: 2px solid var(--ldc-ui-accent,#42b5db); outline-offset: 2px; }
+#ldc-modal ::-webkit-scrollbar { width: 7px; height: 7px; }
+#ldc-modal ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+#ldc-modal ::-webkit-scrollbar-track { background: transparent; }
+#ldc-modal ::-webkit-scrollbar-thumb { background: var(--ldc-ui-line2,#56616d); border: 2px solid transparent; background-clip: padding-box; border-radius: 8px; }
+#ldc-modal ::-webkit-scrollbar-corner { background: transparent; }
+@media (max-width: 700px) {
+  .ldc-settings-card { max-width: calc(100vw - 20px); height: calc(100vh - 20px); }
+  .ldc-settings-nav { width: 132px; flex-basis: 132px; padding: 12px 7px; }
+  .ldc-settings-nav button { padding: 9px 7px !important; gap: 6px !important; font-size: 12px !important; }
+  #ldc-modal-body { padding: 4px 16px 18px !important; }
+}
+@media (prefers-reduced-motion: reduce) { #ldc-modal *, #ldc-gear * { transition: none !important; } }
+
+.ldc-card-note { font-size:12px; line-height:1.6; color:var(--ldc-control-muted); padding-top:16px; border-top:1px solid var(--ldc-control-line); }
+.ldc-settings-nav { overflow-y:auto; }
+
+.ldc-ecosystem-profile { margin:12px; width:calc(100% - 24px); flex-shrink:0; }.ldc-ecosystem-source { font:10px/1.4 Tahoma,sans-serif; color:var(--card-muted); padding:0 13px 10px; margin:0; }
+
+#ldc-share-menu section { width:650px; padding:20px 22px; }
+#ldc-share-menu .ldc-share-preview { display:grid;width:100%;place-items:center;aspect-ratio:16/9;min-height:130px;max-height:30vh;overflow:hidden;border:1px solid var(--ldc-control-line);border-radius:6px;background:#03070b;box-shadow:inset 0 1px 5px #0006; }
+#ldc-share-menu .ldc-share-preview video { display:block;width:100%;height:100%;max-height:30vh;object-fit:contain; }
+#ldc-share-menu .ldc-share-empty { display:flex;align-items:center;flex-direction:column;gap:7px;padding:18px;color:var(--ldc-control-muted); }
+#ldc-share-menu .ldc-share-empty svg { opacity:.7;margin-bottom:3px; }
+#ldc-share-menu .ldc-share-empty span { font-size:13px; }
+#ldc-share-menu .ldc-share-empty small { font-size:11px;text-align:center; }
+#ldc-share-menu .ldc-share-preview-status { min-height:16px;margin:7px 0 2px;font-size:11px; }
+#ldc-share-menu section>label:has(select) { display:inline-block;width:calc(33.333% - 10px);margin-right:10px;vertical-align:top; }
+#ldc-share-menu select { font-size:11px; padding:8px; }
+#ldc-share-menu button[hidden] { display:none; }
+#ldc-share-menu footer { margin-top:14px; }
+@media(max-width:600px) { #ldc-share-menu section>label:has(select) { display:block;width:100%;margin:10px 0; } }
+
+
+.ldc-room-commands { display:grid;grid-template-columns:120px 1fr;gap:10px 12px;margin:18px 0;padding:14px 0;border-top:1px solid var(--ldc-control-line);border-bottom:1px solid var(--ldc-control-line);font-size:12px; }.ldc-room-commands dt { font-weight:600; }.ldc-room-commands dd { margin:0;color:var(--ldc-control-muted); }

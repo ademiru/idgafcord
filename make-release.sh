@@ -20,12 +20,14 @@ if [ ! -f "$KEY" ]; then echo "HATA: $KEY bulunamadı (imza anahtarı)."; exit 1
 
 export TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY")"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+trap 'unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD' EXIT
 
 echo ">> Derleniyor (imzalı NSIS kurulumu)..."
-npm run tauri build -- --bundles nsis
+npm run tauri -- build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":true}}'
 
 VER="$(node -p "require('./src-tauri/tauri.conf.json').version")"
-SETUP="$(ls "$NSIS_DIR"/*-setup.exe | head -1)"
+SETUP="$NSIS_DIR/idgafcord_${VER}_x64-setup.exe"
+if [ ! -f "$SETUP" ]; then echo "HATA: Bu surume ait kurulum bulunamadi: $SETUP"; exit 1; fi
 BASENAME="$(basename "$SETUP")"
 SIG="$(cat "$SETUP.sig")"
 PORTABLE_ZIP="$PORTABLE_DIR/idgafcord_${VER}_x64-portable.zip"
@@ -39,6 +41,7 @@ echo ">> Portable zip hazırlanıyor..."
 rm -rf "$PORTABLE_DIR"
 mkdir -p "$PORTABLE_DIR/idgafcord"
 cp "$RELEASE_EXE" "$PORTABLE_DIR/idgafcord/idgafcord.exe"
+touch "$PORTABLE_DIR/idgafcord/portable.flag"
 cat > "$PORTABLE_DIR/idgafcord/README.txt" <<EOF
 idgafcord $VER portable
 

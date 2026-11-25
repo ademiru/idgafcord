@@ -1,12 +1,25 @@
 {
   "name": "lightweight-discord-client",
   "private": true,
-  "version": "0.1.20",
+  "version": "0.2.4",
   "type": "module",
   "scripts": {
+    "ecosystem:prepare": "node scripts/prepare-ecosystem.mjs",
+    "voice:prepare": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-voice-resources.ps1",
+    "predev": "npm run voice:prepare",
+    "precheck": "npm run voice:prepare",
+    "dev": "tauri dev",
+    "build:setup": "tauri build --bundles nsis",
+    "test": "node --test tests/voice.test.js tests/bootstrap.test.js tests/ecosystem.test.js",
+    "test:ui": "playwright test",
+    "test:native": "node scripts/smoke-app.mjs",
+    "test:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-installer.ps1",
+    "version:set": "node scripts/set-version.mjs",
+    "check": "npm test && cargo check --locked --manifest-path src-tauri/Cargo.toml",
     "tauri": "tauri"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@playwright/test": "^1.65.1",
+    "@tauri-apps/cli": "2.11.4"
   }
 }

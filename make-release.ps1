@@ -14,15 +14,22 @@ if (-not (Test-Path $key)) {
   throw "HATA: $key bulunamadi (imza anahtari)."
 }
 
-$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $key -Raw
-$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
-
 Write-Host ">> Derleniyor (imzali NSIS kurulumu)..."
-npm run tauri build -- --bundles nsis
+$previousKey = $env:TAURI_SIGNING_PRIVATE_KEY
+$previousPassword = $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+try {
+  $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $key -Raw
+  $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+  npm run tauri -- build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":true}}'
+  if ($LASTEXITCODE -ne 0) { throw "HATA: Derleme basarisiz. Eski dosyalardan surum hazirlanmadi." }
+} finally {
+  [Environment]::SetEnvironmentVariable('TAURI_SIGNING_PRIVATE_KEY', $previousKey, 'Process')
+  [Environment]::SetEnvironmentVariable('TAURI_SIGNING_PRIVATE_KEY_PASSWORD', $previousPassword, 'Process')
+}
 
 $conf = Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
 $ver = $conf.version
-$setup = Get-ChildItem $nsisDir -Filter "*-setup.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$setup = Get-ChildItem $nsisDir -Filter "*_${ver}_x64-setup.exe" | Select-Object -First 1
 if (-not $setup) {
   throw "HATA: Setup exe bulunamadi: $nsisDir"
 }
@@ -37,6 +44,9 @@ if (-not (Test-Path $releaseExe)) {
 }
 
 Write-Host ">> Portable zip hazirlaniyor..."
+$bundleRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'src-tauri/target/release/bundle'))
+$portablePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $portableDir))
+if (-not $portablePath.StartsWith($bundleRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Portable dizini paket kokunun disinda.' }
 Remove-Item $portableDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force "$portableDir/idgafcord" | Out-Null
 Copy-Item $releaseExe "$portableDir/idgafcord/idgafcord.exe" -Force

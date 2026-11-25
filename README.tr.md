@@ -1,83 +1,66 @@
-<div align="center">
+# idgafcord
 
-**[English](README.md)** · **Türkçe**
+[English](README.md) · Türkçe
 
-<pre>
-██╗██████╗  ██████╗  █████╗ ███████╗ ██████╗ ██████╗ ██████╗ ██████╗
-██║██╔══██╗██╔════╝ ██╔══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔══██╗
-██║██║  ██║██║  ███╗███████║█████╗  ██║     ██║   ██║██████╔╝██║  ██║
-██║██║  ██║██║   ██║██╔══██║██╔══╝  ██║     ██║   ██║██╔══██╗██║  ██║
-██║██████╔╝╚██████╔╝██║  ██║██║     ╚██████╗╚██████╔╝██║  ██║██████╔╝
-╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝      ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝
-</pre>
+<img src="logo-1024.png" width="96" alt="idgafcord">
 
-**`I DON'T GIVE A FUCK ABOUT YOUR DATA`**
+Windows için Tauri 2, Rust ve WebView2 ile çalışan Discord istemcisi.
 
-Discord'un tüm işlevi. İzlemesi, şişkinliği ve reklamı olmadan.
+[Windows 0.2.4 ön sürümünü indir](https://github.com/ademiru/idgafcord/releases/download/v0.2.4/idgafcord_0.2.4_x64-setup.exe)
 
-### **[ ⬇ İNDİR — Windows ](https://github.com/ademiru/idgafcord/releases/latest)**
+## 0.2.4 geliştirme sürümü
 
-</div>
+- Frutiger Aero ve Dark Frutiger Aero (yeni profillerde varsayılan): sohbet, kanal listeleri, menüler, mesaj kutusu ve ayarlar için tutarlı yüzeyler. Açık/koyu geçişi, odak görünümü ve kapatılabilir cam efektleri.
+- Yeni logo ve süresi sınırlı açılış animasyonu. Azaltılmış hareket tercihi desteklenir.
+- Rust tarafında çevrimdışı mikrofon komutları. Türkçe: **mikrofonu kapat** / **mikrofonu aç**. İngilizce: **mute** / **open mic**.
+- Bilinen telemetri uçları için fetch, XHR ve beacon engellemesi; canlı istek sayacı.
+- Tepsi, global mikrofon kısayolu, performans profilleri, kurulu sürüm için güncelleyici ve portable çalışma.
+- Discord Kullanıcı Ayarları → **idgafcord → İstemci ayarları** girişi; büyük bağımsız cam logo, sunucu parlamaları ve cam mesaj balonları. Reply önizlemesi balondan ayrı tutulur.
+- Mikrofon durumu üst çubukta küçük bir simgedir. Hatalar ses ayarlarında açıklanır; profil alanında yüzen rozet yoktur. Discord mikrofon/kamera izinleri yerel, temaya uyumlu bir pencerede açık seçimle yönetilir.
 
----
+- Üst çubukta yazılı **idgafcord** ayar düğmesi; ince 56/30 px panel başlığı ve alt çubuğu, SVG içinde kesilmeyen logo ve hareket etmeyen sunucu parlamaları.
+- Tema rengini izleyen dijital ses saati, ses paneli, bahsetme ve mesaja gitme vurguları. Events, Members ve Server Boosts ayrı ayrı gizlenebilir.
+- Paylaşım öncesi boyut/fps/içerik/ses menüsü ve canlı önizleme; gereksiz üst paylaşım kutusu kaldırıldı. **Sinema** üst çubuktan açılır; Discord yerleşimini değiştirmeyen ayrı görüntüleyici, kaynak seçimi, sığdır/doldur/esnet, yakınlık ve yerel parlaklık seçenekleri sunar.
+- Fotoğraflarda döndürme/çevirme, yakınlaştırma, piksel inceleme, gerçek boyut ve Discord ekinin **orijinalini** native kaydetme penceresiyle indirme.
+- **Kartım**: dört kaplama ve yerel kart düzenleyicisi. Cloudflare Workers/D1 için ücretsiz başlangıca uygun, isteğe bağlı ekosistem temeli; henüz herkese açık sunucu yoktur. İstemci rozetleri kullanıcı beyanıdır.
 
-Resmî Discord uygulaması seni izler. Her açılışta bir avuç `science`, `metrics`,
-`sentry` isteği arka planda bir yerlere gider — sen fark etmeden. idgafcord bu
-istekleri **ağa çıkmadan, kaynağında keser.** Hesabın aynı hesap, sunucuların aynı
-sunucu; sadece seni satan ve yavaşlatan katman yok.
+[Ekran paylaşımı kapsamı ve açık HDR konusu](docs/SCREEN-SHARING.md) · [Ekosistem kurulumu ve veri akışı](docs/ECOSYSTEM.md)
 
-Bu bir tema paketi ya da eklenti **değil.** BetterDiscord/Vencord gibi resmî
-uygulamanın içine kod enjekte etmez. idgafcord, Discord'u kendi **hafif kabuğunda**
-çalıştıran, telemetriyi **ağ katmanında** durduran bağımsız bir masaüstü istemcisidir.
-Ne bulut. Ne hesap. Ne takip. Ayarların senin diskinde kalır, o kadar.
+## Yerel ses komutları
 
-## Farkı ne?
+Ayarlar → Ses bölümünden dili seçip sesli komutu aç. Türkçe ve İngilizce modeller kurulumla birlikte gelir; uygulama içinde ayrıca paket indirilmez. Ayarlar normal Discord dişlisinin içindeki **idgafcord** bölümünden, tepsi menüsünden veya **Ctrl + Shift + ,** ile açılır.
 
-**Telemetri gerçekten kesilir, gizlenmez.** Çoğu araç izleme öğelerini CSS ile
-saklar; istek yine gider. idgafcord `fetch`/`XHR`/`beacon` katmanında engeller ve
-neyi durdurduğunu **canlı, kategorili bir terminalde** sana gösterir.
+Ek komutlar: **odadan çık** / **ses kanalından çık**, **sesi tamamen kapat** ve **sesi geri aç**. Ayrılma komutu daha yüksek tanıma güveni ister; düğme belirsizse işlem yapılmaz.
 
-**Sesinle sustur.** Kulaklık takıp oyundayken elini klavyeye atma. "sustur" de
-kapansın, "aç" de açılsın. Kendi tetik kelimeni belirlersin, doğal söyleyişleri de
-anlar, sol altta ne duyduğunu gösterir. Altyapısı çökmeyecek şekilde kuruldu ve
-gerçek tarayıcı motorunda test edildi.
+Ses cihazdan çıkmaz ve dosyaya yazılmaz. Tarayıcı diktesi kullanılmaz. Hafif ses etkinliği kapısı sessizliği ayırır; kısa konuşmalar yerel Vosk modelinde sınırlı komut sözlüğüyle değerlendirilir. Uzun konuşmalar ve düşük güvenli sonuçlar uygulanmaz. Komutu tek başına söyle.
 
-**Beyaz ekran görmezsin.** Bir şey ters giderse istemci kendini iyileştirir:
-güvenli moda düşer, temayı/engellemeyi geçici kapatır, kendini toparlar. Tepsi
-menüsünde her zaman tek tıklık bir "güvenli yeniden başlat" durur.
+Özellik açıkken model ek RAM kullanır. Kapatınca mikrofon akışı, tanıyıcı ve model bırakılır. Sesli komut varsayılan olarak kapalıdır. Discord'un resmî istemcisine karşı ölçülmüş bir bellek üstünlüğü iddia edilmez.
 
-**Sistemine saygılı.** Kapatınca tepsiye iner, çalışmaya devam eder. Windows'la
-başlar, istersen sessizce. Oyun modunda tepsideyken Discord'u askıya alıp neredeyse
-sıfır kaynağa iner. Arayüz **Türkçe ve İngilizce.**
+Özel komutların kelimeleri seçilen modelin sözlüğünde bulunmalıdır. Desteklenmeyen kelimeler için hata gösterilir. Susturma işleminin başarı durumu Discord'un gerçek düğme durumundan doğrulanır.
 
-## İçinde ne var?
+## Gizlilik kapsamı
 
-| | |
-|---|---|
-| **Gizlilik** | Telemetri engelleyici · canlı engelleme terminali · Nitro/reklam gizleme |
-| **Ses** | "sustur/aç" komutları · özel tetik kelimeleri · global susturma kısayolu · durum rozeti |
-| **Performans** | Normal / Tasarruf / Yayın / Oyun profilleri · GPU kontrolü · ekran paylaşımı modu |
-| **Görünüm** | 14 tema (idgaf, Midnight, Tokyo Night, Catppuccin, Nord…) · aksan rengi · özel logo/arka plan/CSS · kompakt & baloncuk modu |
-| **Sistem** | Tepsiye küçülme · Windows ile başlat · otomatik güncelleme · portable sürüm · TR/EN dil |
+Hesap, mesajlar, görüşmeler ve dosyalar Discord'un kendi hizmetlerini kullanır. Engelleyici bilinen telemetri uçlarını sayfa istek katmanında durdurur; bütün ağ trafiğini filtreleyen bir güvenlik duvarı değildir. Bildirme ve mesaj uçları engellenmez. Eklentiler ve kullanıcının seçtiği uzak arka planlar ek ağ istekleri oluşturabilir.
 
-Ayarların tamamı Discord içindeki **yüzen dişli** düğmesinde, sekmeli tek bir panelde.
+## Geliştirme
 
-## Kur ve çalıştır
+Node.js, Rust MSVC, Visual C++ Build Tools ve WebView2 Runtime gerekir. Depodaki toolchain dosyası Windows MSVC'yi seçer.
 
-**[En son sürümü indir »](https://github.com/ademiru/idgafcord/releases/latest)**
+```powershell
+npm ci
+npm run voice:prepare
+npm run dev
+npm test
+npm run test:ui
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+.\scripts\test-voice.ps1
+npm run tauri -- build --no-bundle
+```
 
-- **`...setup.exe`** — kurar, otomatik güncelleme alır. *(önerilen)*
-- **`...portable.zip`** — kurulum yok; `idgafcord.exe` doğrudan açılır, ayarlarını yanındaki `data` klasöründe tutar.
+Geliştirme profili kurulu uygulamanın ayar ve tarayıcı verilerinden ayrıdır. Portable sürüm `portable.flag` algılar; ayarlar, tarayıcı profili ve ses paketleri exe yanındaki `data` klasöründe kalır.
 
-Windows "bilinmeyen yayıncı" derse → **Yine de çalıştır.** İmzalı kod sertifikası
-almadık; casus yazılım olduğundan değil, ona para vermediğimizden.
+Ses testleri Windows'un yüklü Türkçe/İngilizce TTS sesleriyle sentetik örnekler üretir; canlı mikrofon açılmaz. Tarayıcı testleri temsili Discord HTML'i kullanır. Gerçek sunucularda, farklı mikrofon ve konuşmacılarda doğrulama ayrıca gerekir.
 
----
+[Geliştirme notları](docs/DEVELOPMENT.md) · [Sürüm hazırlama](PUBLISH.md) · [Yayınlanmış sürümler](https://github.com/ademiru/idgafcord/releases)
 
-<div align="center">
-
-Ağır. Reklamlı. İzleyen bir dünyada — **idgafcord** sadece Discord'u açar ve çekilir.
-
-**[ İndir ](https://github.com/ademiru/idgafcord/releases/latest)** · **[ Sorun bildir ](https://github.com/ademiru/idgafcord/issues)**
-
-</div>
+Yerel motor: [Vosk API](https://github.com/alphacep/vosk-api), [modeller ve lisanslar](https://alphacephei.com/vosk/models). Derleme öncesinde arşivler sabit SHA-256 değerleriyle doğrulanır ve kurulum kaynaklarına eklenir. Lisans metinleri kurulumda `voice/` klasörüne dahildir.

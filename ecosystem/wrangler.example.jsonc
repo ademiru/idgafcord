@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "idgafcord-ecosystem",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-25",
+  "workers_dev": true,
+  "send_metrics": false,
+  "observability": { "enabled": false },
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  "vars": { "PUBLIC_ORIGIN": "https://idgafcord-ecosystem.YOUR-SUBDOMAIN.workers.dev", "DISCORD_CLIENT_ID": "YOUR-DISCORD-APPLICATION-ID" },
+  "d1_databases": [{ "binding": "DB", "database_name": "idgafcord", "database_id": "YOUR-D1-DATABASE-ID", "migrations_dir": "migrations" }]
+}

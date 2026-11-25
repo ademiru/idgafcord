@@ -8,12 +8,15 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+test-results/
+playwright-report/
 dist
 dist-ssr
 *.local
 
 # Rust / Tauri build
 src-tauri/target/
+src-tauri/resources/voice/
 
 # GÜNCELLEME İMZA ANAHTARI — ASLA COMMIT ETME
 src-tauri/updater-private.key
@@ -29,3 +32,10 @@ src-tauri/updater-private.key.pub
 *.njsproj
 *.sln
 *.sw?
+
+# Ecosystem credentials and generated shared assets
+ecosystem/.dev.vars
+ecosystem/.wrangler/
+ecosystem/wrangler.jsonc
+ecosystem/public/card.mjs
+ecosystem/public/card.css

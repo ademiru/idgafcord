@@ -1,0 +1,34 @@
+#ldc-cinema-entry { display:inline-flex;align-items:center;gap:6px;flex:none;box-sizing:border-box;height:28px;padding:3px 9px;border:1px solid var(--ldc-control-line);border-radius:5px;background:var(--ldc-control-bg);color:var(--ldc-control-ink);font:500 11px/18px "Segoe UI",sans-serif;cursor:pointer; }
+#ldc-cinema-entry[hidden] { display:none!important; }
+#ldc-cinema-entry[data-floating] { position:fixed;top:42px;right:18px;z-index:2147482990; }
+#ldc-cinema-entry:hover { border-color:var(--ldc-control-accent); }
+#ldc-cinema-entry:focus-visible { outline:2px solid var(--ldc-control-accent);outline-offset:2px; }
+#ldc-cinema-view { position:fixed;inset:0;margin:0;padding:0;border:0;max-width:none;max-height:none;width:100vw;height:100vh;box-sizing:border-box;overflow:hidden;background:#000;color:var(--ldc-control-ink);font:12px/1.5 "Segoe UI",sans-serif; }
+#ldc-cinema-view::backdrop { background:#000; }
+#ldc-cinema-view:not([open]) { display:none; }
+#ldc-cinema-view * { box-sizing:border-box; }
+#ldc-cinema-view .ldc-cinema-surface { position:relative;width:100%;height:100%;overflow:hidden;background:#000; }
+#ldc-cinema-view .ldc-cinema-surface:fullscreen { width:100vw;height:100vh;background:#000; }
+#ldc-cinema-view .ldc-cinema-picture { position:absolute;inset:0;margin:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:var(--ldc-cinema-fit,contain);scale:var(--ldc-cinema-zoom,1);filter:brightness(var(--ldc-cinema-brightness,1));background:#000;border:0;border-radius:0; }
+#ldc-cinema-view .ldc-cinema-caption { position:absolute;top:18px;left:22px;max-width:calc(100% - 44px);color:#dbe4e8aa;font-size:11px;text-shadow:0 1px 3px #000;pointer-events:none; }
+#ldc-cinema-view .ldc-cinema-status { position:absolute;top:45%;left:20px;right:20px;text-align:center;color:#dbe4e8;pointer-events:none;text-shadow:0 1px 4px #000; }
+#ldc-cinema-tools { position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:3px;max-width:calc(100% - 24px);padding:5px 7px;background:linear-gradient(180deg,#ffffff07,transparent 50%),var(--ldc-control-bg);color:var(--ldc-control-ink);border:1px solid var(--ldc-control-line);border-radius:6px;box-shadow:inset 0 1px 0 #ffffff0a,0 4px 18px #0005;font:12px/1.4 "Segoe UI",sans-serif; }
+#ldc-cinema-tools>strong { font-size:11px;font-weight:500;padding:0 10px 0 6px; }
+#ldc-cinema-tools button,#ldc-cinema-tools select { background:var(--ldc-control-bg);color:inherit;border:1px solid var(--ldc-control-line);padding:6px 9px;border-radius:4px;font:inherit;cursor:pointer; }
+#ldc-cinema-tools>button { border-color:transparent;padding:6px;display:grid;place-items:center;width:30px;height:30px; }
+#ldc-cinema-tools button:hover,#ldc-cinema-tools summary:hover { background:color-mix(in srgb,var(--ldc-control-accent) 13%,var(--ldc-control-bg)); }
+#ldc-cinema-tools :focus-visible { outline:2px solid var(--ldc-control-accent);outline-offset:2px; }
+#ldc-cinema-tools .ldc-cinema-settings { position:relative; }
+#ldc-cinema-tools summary { padding:6px 10px;font-size:12px;cursor:pointer;list-style:none;border-radius:4px; }
+#ldc-cinema-tools summary::after { content:'⌃';margin-left:8px;color:var(--ldc-control-muted); }
+#ldc-cinema-tools .ldc-cinema-pane { position:absolute;bottom:46px;left:50%;transform:translateX(-50%);width:290px;max-height:min(560px,calc(100vh - 90px));overflow:auto;padding:18px;border:1px solid var(--ldc-control-line);border-radius:7px;background:var(--ldc-control-bg);box-shadow:0 10px 35px #0008,inset 0 1px 0 #ffffff0b; }
+#ldc-cinema-tools h3 { font-size:13px;font-weight:600;margin:0 0 18px; }
+#ldc-cinema-tools label { display:block;font-size:11px;margin:16px 0;padding:0;color:var(--ldc-control-muted); }
+#ldc-cinema-tools select { display:block;width:100%;min-width:0;margin-top:6px;font-size:12px;color:var(--ldc-control-ink); }
+#ldc-cinema-tools .ldc-cinema-range { display:flex;align-items:center;gap:14px;margin-top:12px; }
+#ldc-cinema-tools input { appearance:none;height:3px;width:auto;flex:1;min-width:0;border:0;border-radius:0;background:linear-gradient(to right,var(--ldc-control-accent) var(--range-fill,0%),var(--ldc-control-line) var(--range-fill,0%));cursor:pointer; }
+#ldc-cinema-tools input::-webkit-slider-thumb { appearance:none;width:10px;height:14px;border:1px solid #9ab9c3;border-radius:2px;background:linear-gradient(90deg,#79959f,#d4e5e9 45%,#79959f);box-shadow:0 1px 3px #0006; }
+#ldc-cinema-tools output { width:38px;font:11px Consolas,monospace;color:var(--ldc-control-ink);text-align:right; }
+#ldc-cinema-tools .ldc-cinema-pane p { font-size:10px;line-height:1.5;color:var(--ldc-control-muted);margin:18px 0 12px; }
+#ldc-cinema-tools.ldc-cinema-minimized>:not(.ldc-cinema-keep) { display:none; }
+@media(max-width:480px) { #ldc-cinema-tools .ldc-cinema-pane { position:fixed;left:50%;width:min(290px,calc(100vw - 24px)); } }

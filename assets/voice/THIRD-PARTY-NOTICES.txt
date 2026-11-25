@@ -1,0 +1,21 @@
+idgafcord offline voice resources
+
+Vosk API 0.3.45, Copyright Alpha Cephei Inc and contributors.
+Source: https://github.com/alphacep/vosk-api/tree/v0.3.45
+License: Apache License 2.0 (APACHE-2.0.txt).
+
+Turkish: vosk-model-small-tr-0.3.
+English: vosk-model-small-en-us-0.15, Copyright 2020 Alpha Cephei Inc.
+Both models are redistributed unmodified under Apache License 2.0.
+Source, model information and licenses: https://alphacephei.com/vosk/models
+The .verified sidecars are packaging metadata added by idgafcord.
+
+The official Vosk Windows runtime includes these unmodified support libraries:
+libgcc_s_seh-1.dll and libstdc++-6.dll: GCC contributors, GPLv3 with
+the GCC Runtime Library Exception 3.1. See GPL-3.0.txt and GCC-RUNTIME-EXCEPTION.txt.
+Source: https://gcc.gnu.org/ and https://github.com/alphacep/vosk-api
+libwinpthread-1.dll: mingw-w64 winpthreads contributors. See WINPTHREADS-LICENSE.txt.
+Source: https://github.com/mingw-w64/mingw-w64/tree/master/mingw-w64-libraries/winpthreads
+
+Runtime archive and acoustic model archive hashes are pinned in
+scripts/prepare-voice-resources.ps1 in the idgafcord source repository.

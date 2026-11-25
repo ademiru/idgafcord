@@ -1,83 +1,66 @@
-<div align="center">
+# idgafcord
 
-**English** · **[Türkçe](README.tr.md)**
+English · [Türkçe](README.tr.md)
 
-<pre>
-██╗██████╗  ██████╗  █████╗ ███████╗ ██████╗ ██████╗ ██████╗ ██████╗
-██║██╔══██╗██╔════╝ ██╔══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔══██╗
-██║██║  ██║██║  ███╗███████║█████╗  ██║     ██║   ██║██████╔╝██║  ██║
-██║██║  ██║██║   ██║██╔══██║██╔══╝  ██║     ██║   ██║██╔══██╗██║  ██║
-██║██████╔╝╚██████╔╝██║  ██║██║     ╚██████╗╚██████╔╝██║  ██║██████╔╝
-╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝      ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝
-</pre>
+<img src="logo-1024.png" width="96" alt="idgafcord">
 
-**`I DON'T GIVE A FUCK ABOUT YOUR DATA`**
+A Windows Discord desktop client built with Tauri 2, Rust and WebView2.
 
-Everything Discord does. Without the tracking, the bloat, or the ads.
+[Download Windows 0.2.4 preview](https://github.com/ademiru/idgafcord/releases/download/v0.2.4/idgafcord_0.2.4_x64-setup.exe)
 
-### **[ ⬇ DOWNLOAD — Windows ](https://github.com/ademiru/idgafcord/releases/latest)**
+## 0.2.4 development build
 
-</div>
+- Frutiger Aero and Dark Frutiger Aero (the default for new profiles) cover chat, channel lists, menus, the composer and settings. Includes light/dark switching, focus view and optional glass effects.
+- New logo and bounded startup animation with reduced-motion support.
+- Offline microphone commands handled by Rust: **mute** / **open mic**, or **mikrofonu kapat** / **mikrofonu aç** in Turkish.
+- Known telemetry endpoint blocking for fetch, XHR and beacon, with a request counter.
+- Tray support, global mute shortcut, performance profiles, installed-build updater and portable mode.
+- Discord User Settings → **idgafcord → Client settings**, a larger standalone glass logo, server lens highlights and glass message bubbles with separate reply previews.
+- A compact voice indicator in the top bar replaces floating profile-area badges. Device consent uses a bundled themed window; microphone/camera access still requires an explicit choice.
 
----
+- Explicit **idgafcord** header settings button, compact 56/30 px panel chrome and a home logo that fits Discord’s SVG viewport.
+- Theme-aware digital voice timers, voice controls and message highlights; independent Events/Members/Server Boosts hiding.
+- Screen-share capture preferences and a live preview; the redundant sharing banner was removed. **Cinema** opens from the header in a separate viewer, preserving Discord’s layout and audio; includes source selection, fit/fill/stretch, zoom and local brightness.
+- Photo rotation/flipping, zoom, pixel inspection, actual size and original Discord attachment downloads through a native save dialog.
+- **My card**: four skins and a local profile-card editor. An optional Cloudflare Workers/D1 ecosystem implementation is included; no public backend is deployed yet. Client badges are self-reported.
 
-The official Discord app watches you. Every launch fires off a handful of
-`science`, `metrics` and `sentry` requests — before you ever notice. idgafcord
-kills them **at the source, before they ever reach the network.** Same account,
-same servers; just without the layer that sells you and slows you down.
+[Screen-sharing scope and unresolved HDR issue](docs/SCREEN-SHARING.md) · [Ecosystem setup and data flow](docs/ECOSYSTEM.md)
 
-This is **not** a theme pack or a plugin. It doesn't inject code into the official
-app like BetterDiscord/Vencord. idgafcord runs Discord inside its own **lightweight
-shell** and blocks telemetry at the **network layer.** No cloud. No account. No
-tracking. Your settings live on your disk — that's it.
+## Offline voice control
 
-## What makes it different
+In Settings → Voice, choose a language and enable voice control. Turkish and English models are included in the installer; no separate in-app download is needed. Open settings from the **idgafcord** section in Discord's normal user settings, the tray menu, or **Ctrl + Shift + ,**.
 
-**Telemetry is actually killed, not hidden.** Most tools hide tracking elements
-with CSS; the request still goes out. idgafcord blocks at the `fetch`/`XHR`/`beacon`
-layer and shows you exactly what it stopped in a **live, categorized terminal.**
+Additional commands: **leave voice**, **mute all audio**, and **restore audio**. Leaving voice uses a higher recognition confidence threshold and is confirmed from Discord’s actual disconnect control.
 
-**Mute with your voice.** Headphones on, mid-game, hands busy? Say "mute" and it
-mutes, "unmute" and it's back. Set your own trigger words, it understands natural
-phrasing, and it shows what it heard in the bottom-left. Built so its engine can't
-crash the app — and verified in a real browser engine.
+Audio stays on the device and is never saved. Browser dictation is not used. A small activity gate discards silence. The local Vosk model processes short utterances with a restricted command vocabulary. Long speech and low-confidence results are discarded. Say each command on its own.
 
-**You won't get stuck on a white screen.** If something goes sideways the client
-heals itself: it drops to safe mode, temporarily disables the theme/blocking, and
-recovers. There's always a one-click "safe restart" in the tray menu.
+The model uses additional RAM while enabled. Disabling voice control releases the microphone stream, recognizer and model. Voice control is off by default. No measured memory advantage over the official Discord client is claimed.
 
-**Respects your machine.** Closes to the tray and keeps running. Starts with
-Windows, silently if you want. Game mode suspends Discord to near-zero resources
-while it sits in the tray. Interface in **English and Turkish.**
+Custom words must exist in the selected model's vocabulary. Unsupported words produce an error. Microphone actions are confirmed from Discord's actual button state.
 
-## What's inside
+## Privacy scope
 
-| | |
-|---|---|
-| **Privacy** | Telemetry blocker · live blocking terminal · hide Nitro/ads |
-| **Voice** | "mute/unmute" commands · custom trigger words · global mute shortcut · status badge |
-| **Performance** | Normal / Saver / Stream / Game profiles · GPU control · screen-share mode |
-| **Look** | 14 themes (idgaf, Midnight, Tokyo Night, Catppuccin, Nord…) · accent color · custom logo/background/CSS · compact & bubble modes |
-| **System** | Minimize to tray · start with Windows · auto-update · portable build · EN/TR language |
+Accounts, messages, calls and attachments continue to use Discord's services. The blocker intercepts known telemetry in page-level requests; it is not a system-wide network firewall. Reporting and messaging endpoints remain available. Plugins and user-selected remote backgrounds can make additional requests.
 
-Everything lives behind the **floating gear** button inside Discord, in one tabbed panel.
+## Development
 
-## Install
+Requires Node.js, Rust MSVC, Visual C++ Build Tools and WebView2 Runtime. The repository toolchain file selects Windows MSVC.
 
-**[Grab the latest release »](https://github.com/ademiru/idgafcord/releases/latest)**
+```powershell
+npm ci
+npm run voice:prepare
+npm run dev
+npm test
+npm run test:ui
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+.\scripts\test-voice.ps1
+npm run tauri -- build --no-bundle
+```
 
-- **`...setup.exe`** — installs and gets auto-updates. *(recommended)*
-- **`...portable.zip`** — no install; `idgafcord.exe` runs directly and keeps its settings in the `data` folder next to it.
+Development uses separate settings and browser data. Portable builds detect `portable.flag` and keep settings, WebView2 data and voice packs in `data` beside the executable.
 
-If Windows says "unknown publisher" → **Run anyway.** We didn't buy a code-signing
-certificate — not because it's spyware, but because we didn't pay for one.
+Voice tests generate synthetic speech with installed Turkish/English Windows TTS voices without opening a microphone. Browser tests use representative Discord HTML. Logged-in server layouts, real microphones and different speakers require further validation.
 
----
+[Development notes](docs/DEVELOPMENT.md) · [Release guide](PUBLISH.md) · [Published releases](https://github.com/ademiru/idgafcord/releases)
 
-<div align="center">
-
-In a world that's heavy, ad-ridden and always watching — **idgafcord** just opens Discord and gets out of the way.
-
-**[ Download ](https://github.com/ademiru/idgafcord/releases/latest)** · **[ Report an issue ](https://github.com/ademiru/idgafcord/issues)**
-
-</div>
+Offline engine: [Vosk API](https://github.com/alphacep/vosk-api), [models and licenses](https://alphacephei.com/vosk/models). Archives are checked against pinned SHA-256 hashes before building and bundled with the installer. License notices are included in the installed `voice/` directory.

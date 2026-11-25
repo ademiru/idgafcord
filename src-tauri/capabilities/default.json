@@ -3,9 +3,6 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
-  "remote": {
-    "urls": ["https://discord.com", "https://*.discord.com"]
-  },
   "permissions": [
     "core:default",
     "opener:default"

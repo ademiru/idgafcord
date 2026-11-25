@@ -10,10 +10,16 @@
 // (localStorage) çalışır; işletim sistemi ayarları (tepsi/autostart/GPU) ise
 // native tepsi menüsündedir.
 
+mod downloads;
+mod ecosystem;
+
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -26,7 +32,12 @@ use tauri::{AppHandle, Manager, Runtime, WebviewUrl};
 use std::str::FromStr;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
+mod appearance;
+#[cfg(windows)]
+mod permissions;
+mod voice;
 
 // ---------------------------------------------------------------------------
 // İşletim sistemi ayarları (Rust tarafı, settings.json). Görünüm/gizlilik
@@ -34,7 +45,11 @@ use tauri_plugin_updater::UpdaterExt;
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
 struct Settings {
+    appearance: appearance::Appearance,
+    ecosystem_url: String,
+    ecosystem_enabled: bool,
     minimize_to_tray: bool,
     autostart: bool,
     start_minimized: bool,
@@ -63,19 +78,97 @@ fn default_language() -> String {
 fn tray_label(lang: &str, key: &str) -> &'static str {
     let en = lang == "en";
     match key {
-        "tray" => if en { "Minimize to tray on close" } else { "Kapatınca tepsiye küçült" },
-        "startmin" => if en { "Start silently in tray" } else { "Tepside sessiz başlat" },
-        "autostart" => if en { "Start with Windows" } else { "Windows ile başlat" },
-        "stream" => if en { "Screen-share performance (restart)" } else { "Ekran paylaşımı performansı (yeniden başlat)" },
-        "gpu" => if en { "Disable hardware acceleration (restart)" } else { "Donanım hızlandırmayı kapat (yeniden başlat)" },
-        "game" => if en { "Game mode: suspend in tray (notifications pause)" } else { "Oyun modu: tepsideyken askıya al (bildirimler durur)" },
-        "auto_update" => if en { "Check for updates automatically" } else { "Güncellemeleri otomatik denetle" },
-        "settings" => if en { "Settings (theme, privacy)" } else { "Ayarlar (tema, gizlilik)" },
-        "cache" => if en { "Clear cache" } else { "Önbelleği temizle" },
-        "repair" => if en { "Troubleshoot: safe restart" } else { "Sorun giderme: güvenli yeniden başlat" },
-        "update" => if en { "Check for updates" } else { "Güncellemeleri denetle" },
-        "show" => if en { "Show Discord" } else { "Discord'u Göster" },
-        "quit" => if en { "Quit" } else { "Çıkış" },
+        "tray" => {
+            if en {
+                "Minimize to tray on close"
+            } else {
+                "Kapatınca tepsiye küçült"
+            }
+        }
+        "startmin" => {
+            if en {
+                "Start silently in tray"
+            } else {
+                "Tepside sessiz başlat"
+            }
+        }
+        "autostart" => {
+            if en {
+                "Start with Windows"
+            } else {
+                "Windows ile başlat"
+            }
+        }
+        "stream" => {
+            if en {
+                "Screen-share performance (restart)"
+            } else {
+                "Ekran paylaşımı performansı (yeniden başlat)"
+            }
+        }
+        "gpu" => {
+            if en {
+                "Disable hardware acceleration (restart)"
+            } else {
+                "Donanım hızlandırmayı kapat (yeniden başlat)"
+            }
+        }
+        "game" => {
+            if en {
+                "Game mode: suspend in tray (notifications pause)"
+            } else {
+                "Oyun modu: tepsideyken askıya al (bildirimler durur)"
+            }
+        }
+        "auto_update" => {
+            if en {
+                "Check for updates automatically"
+            } else {
+                "Güncellemeleri otomatik denetle"
+            }
+        }
+        "settings" => {
+            if en {
+                "Settings (theme, privacy)"
+            } else {
+                "Ayarlar (tema, gizlilik)"
+            }
+        }
+        "cache" => {
+            if en {
+                "Clear cache"
+            } else {
+                "Önbelleği temizle"
+            }
+        }
+        "repair" => {
+            if en {
+                "Troubleshoot: safe restart"
+            } else {
+                "Sorun giderme: güvenli yeniden başlat"
+            }
+        }
+        "update" => {
+            if en {
+                "Check for updates"
+            } else {
+                "Güncellemeleri denetle"
+            }
+        }
+        "show" => {
+            if en {
+                "Show Discord"
+            } else {
+                "Discord'u Göster"
+            }
+        }
+        "quit" => {
+            if en {
+                "Quit"
+            } else {
+                "Çıkış"
+            }
+        }
         _ => "",
     }
 }
@@ -87,6 +180,9 @@ fn default_mute_shortcut() -> String {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            appearance: appearance::Appearance::default(),
+            ecosystem_url: String::new(),
+            ecosystem_enabled: false,
             minimize_to_tray: true,
             autostart: false,
             start_minimized: false,
@@ -141,7 +237,13 @@ fn config_dir<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
             }
         }
     }
-    app.path().app_config_dir().ok()
+    app.path().app_config_dir().ok().map(|path| {
+        if cfg!(debug_assertions) {
+            path.join("development")
+        } else {
+            path
+        }
+    })
 }
 
 fn load_settings<R: Runtime>(app: &AppHandle<R>) -> Settings {
@@ -156,7 +258,12 @@ fn save_settings<R: Runtime>(app: &AppHandle<R>, settings: &Settings) {
     if let Some(dir) = config_dir(app) {
         let _ = fs::create_dir_all(&dir);
         if let Ok(json) = serde_json::to_string_pretty(settings) {
-            let _ = fs::write(dir.join("settings.json"), json);
+            let temp = dir.join("settings.json.tmp");
+            if fs::write(&temp, json).is_ok() {
+                if let Err(e) = fs::rename(&temp, dir.join("settings.json")) {
+                    eprintln!("Settings could not be saved: {e}");
+                }
+            }
         }
     }
 }
@@ -173,6 +280,8 @@ fn sync_native_settings<R: Runtime>(app: &AppHandle<R>) {
     };
 
     let payload = serde_json::json!({
+        "ecosystem_url": settings.ecosystem_url,
+        "ecosystem_enabled": settings.ecosystem_enabled,
         "minimize_to_tray": settings.minimize_to_tray,
         "start_minimized": settings.start_minimized,
         "autostart": settings.autostart,
@@ -181,8 +290,10 @@ fn sync_native_settings<R: Runtime>(app: &AppHandle<R>) {
         "game_mode": settings.game_mode,
         "auto_update_check": settings.auto_update_check,
         "mute_shortcut": settings.mute_shortcut,
+        "voice_tr_ready": app.try_state::<voice::VoiceManager>().is_some_and(|manager|manager.ready("tr")),
+        "voice_en_ready": app.try_state::<voice::VoiceManager>().is_some_and(|manager|manager.ready("en")),
     });
-    let _ = w.eval(&format!(
+    let _ = w.eval(format!(
         "window.__LDC_setNativeSettings&&window.__LDC_setNativeSettings({payload});"
     ));
 }
@@ -191,15 +302,32 @@ fn register_mute_shortcut<R: Runtime>(app: &AppHandle<R>, shortcut: &str) -> boo
     let Ok(shortcut) = Shortcut::from_str(shortcut) else {
         return false;
     };
-    let _ = app.global_shortcut().unregister_all();
-    app.global_shortcut().register(shortcut).is_ok()
+    let shortcuts = app.global_shortcut();
+    if shortcuts.is_registered(shortcut) {
+        return true;
+    }
+    if shortcuts.register(shortcut).is_err() {
+        return false;
+    }
+    // Keep the working shortcut until its replacement has registered successfully.
+    if let Some(previous) = app
+        .try_state::<Mutex<Settings>>()
+        .and_then(|s| s.lock().ok().map(|s| s.mute_shortcut.clone()))
+    {
+        if let Ok(previous) = Shortcut::from_str(&previous) {
+            if previous != shortcut {
+                let _ = shortcuts.unregister(previous);
+            }
+        }
+    }
+    true
 }
 
 fn panel_notice<R: Runtime>(app: &AppHandle<R>, msg: &str, warn: bool) {
     if let Some(window) = app.get_webview_window("main") {
         let msg = serde_json::json!(msg);
         let warn = if warn { "true" } else { "false" };
-        let _ = window.eval(&format!(
+        let _ = window.eval(format!(
             "window.__LDC_nativeNotice&&window.__LDC_nativeNotice({msg},{warn});"
         ));
     }
@@ -209,15 +337,44 @@ fn update_status<R: Runtime>(app: &AppHandle<R>, msg: &str, warn: bool) {
     if let Some(window) = app.get_webview_window("main") {
         let msg = serde_json::json!(msg);
         let warn = if warn { "true" } else { "false" };
-        let _ = window.eval(&format!(
+        let _ = window.eval(format!(
             "window.__LDC_updateStatus&&window.__LDC_updateStatus({msg},{warn});"
         ));
     }
     panel_notice(app, msg, warn);
 }
 
+static UPDATE_RUNNING: AtomicBool = AtomicBool::new(false);
+struct UpdateGuard;
+impl Drop for UpdateGuard {
+    fn drop(&mut self) {
+        UPDATE_RUNNING.store(false, Ordering::Release);
+    }
+}
+
 fn spawn_update_check<R: Runtime>(app: AppHandle<R>, quiet: bool) {
+    let portable = env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("portable.flag").exists()))
+        .unwrap_or(false);
+    if cfg!(debug_assertions) || portable {
+        if !quiet {
+            update_status(
+                &app,
+                "Bu sürümde güncellemeler GitHub Releases üzerinden elle kurulur.",
+                false,
+            );
+        }
+        return;
+    }
+    if UPDATE_RUNNING
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
     tauri::async_runtime::spawn(async move {
+        let _guard = UpdateGuard;
         if !quiet {
             update_status(&app, "Güncelleme kontrol ediliyor...", false);
         }
@@ -227,7 +384,11 @@ fn spawn_update_check<R: Runtime>(app: AppHandle<R>, quiet: bool) {
                     update_status(&app, "Yeni sürüm bulundu, indiriliyor...", false);
                     match update.download_and_install(|_, _| {}, || {}).await {
                         Ok(_) => {
-                            update_status(&app, "Güncelleme kuruldu, yeniden başlatılıyor...", false);
+                            update_status(
+                                &app,
+                                "Güncelleme kuruldu, yeniden başlatılıyor...",
+                                false,
+                            );
                             app.restart();
                         }
                         Err(_) => update_status(&app, "Güncelleme indirilemedi.", true),
@@ -243,7 +404,7 @@ fn spawn_update_check<R: Runtime>(app: AppHandle<R>, quiet: bool) {
                         update_status(&app, "Güncelleme kontrolü başarısız.", true);
                     }
                 }
-            }
+            },
             Err(_) => {
                 if !quiet {
                     update_status(&app, "Güncelleme sistemi başlatılamadı.", true);
@@ -274,31 +435,97 @@ fn spawn_auto_update_loop<R: Runtime>(app: AppHandle<R>) {
 //   * Discord temasına uygun ayar paneli (dişli düğme + modal).
 // ---------------------------------------------------------------------------
 
-const LOGO_DATA_URI: &str = concat!("data:image/png;base64,", include_str!("logo-1024.png.b64"));
+const LOGO_DATA_URI: &str = concat!("data:image/png;base64,", include_str!("logo-256.png.b64"));
 
 fn bootstrap_script() -> String {
     // .trim(): b64 dosyası sonda satır sonu (\r\n) ile üretilmişse, bu ham satır
     // sonu tek tırnaklı JS string literalini bozup enjekte edilen TÜM bootstrap
     // script'ini SyntaxError ile çökertir (yüzen dişli/rozet dahil kaybolur).
-    BOOTSTRAP_TEMPLATE.replace("__LDC_LOGO_DATA_URI__", LOGO_DATA_URI.trim())
+    BOOTSTRAP_TEMPLATE
+        .replace("__LDC_LOGO_DATA_URI__", LOGO_DATA_URI.trim())
+        .replace("__LDC_APP_VERSION__", env!("CARGO_PKG_VERSION"))
+        .replace(
+            "__LDC_SETTINGS_CSS__",
+            &serde_json::to_string(include_str!("client/settings.css"))
+                .expect("CSS is serializable"),
+        )
+        .replace(
+            "__LDC_CINEMA_CSS__",
+            &serde_json::to_string(include_str!("client/cinema.css"))
+                .expect("cinema CSS is serializable"),
+        )
+        .replace("__LDC_VOICE_MODULE__", include_str!("client/voice.js"))
+        .replace(
+            "__LDC_SCREENSHARE_MODULE__",
+            include_str!("client/screenshare.js"),
+        )
+        .replace(
+            "__LDC_WORKSPACE_MODULE__",
+            include_str!("client/workspace.js"),
+        )
+        .replace(
+            "__LDC_PHOTO_TOOLS_MODULE__",
+            include_str!("client/photo-tools.js"),
+        )
+        .replace("__LDC_CINEMA_MODULE__", include_str!("client/cinema.js"))
+        .replace(
+            "__LDC_ECOSYSTEM_MODULE__",
+            include_str!("client/ecosystem.js"),
+        )
+        .replace(
+            "__LDC_CARD_SCHEMA__",
+            &include_str!("../../shared/card.mjs").replace("export ", ""),
+        )
+        .replace(
+            "__LDC_CARD_CSS__",
+            &serde_json::to_string(include_str!("../../shared/card.css"))
+                .expect("card CSS is serializable"),
+        )
+        .replace("__LDC_PRIVACY_MODULE__", include_str!("client/privacy.js"))
+        .replace("__LDC_AERO_MODULE__", include_str!("client/aero.js"))
+        .replace("__LDC_SPLASH_MODULE__", include_str!("client/splash.js"))
+        .replace("__LDC_STARTUP_MODULE__", include_str!("client/startup.js"))
+        .replace(
+            "__LDC_SETTINGS_ENTRY_MODULE__",
+            include_str!("client/settings-entry.js"),
+        )
+        .replace(
+            "__LDC_SPLASH_CSS__",
+            &serde_json::to_string(include_str!("client/splash.css")).expect("CSS is serializable"),
+        )
+        .replace(
+            "__LDC_AERO_CSS__",
+            &serde_json::to_string(include_str!("client/aero.css")).expect("CSS is serializable"),
+        )
+        .replace(
+            "__LDC_NIGHT_CITY_URI__",
+            include_str!("client/night-city.jpg.b64").trim(),
+        )
 }
 
 const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
+  if(location.hostname!=='discord.com'||window.top!==window.self)return;
   if(window.__LDC_INIT__)return;window.__LDC_INIT__=1;
   var LDC_LOGO_DATA_URI='__LDC_LOGO_DATA_URI__';
-  var LS=window.localStorage;
+  var LS;try{LS=window.localStorage;}catch(e){}
   function get(k,def){try{var v=LS.getItem('ldc_'+k);return v===null?def:v;}catch(e){return def;}}
   function set(k,v){try{LS.setItem('ldc_'+k,v);}catch(e){}}
   function ison(k,def){return get(k,def)==='1';}
-  // Güvenli mod: Discord render olmadıysa (beyaz/siyah ekran) bu oturumda tema,
+  // Güvenli mod yalnızca kullanıcının elle başlattığı sorun gidermede uygulanır.
   // özel CSS ve telemetri engellemesi UYGULANMAZ. Ayarlar localStorage'da korunur;
   // yalnızca bu oturum temiz çalışır. Uygulama yeniden açılınca normale döner.
-  var SAFE=false;try{SAFE=sessionStorage.getItem('ldc_safe')==='1';}catch(e){}
+  var SAFE=false;try{SAFE=sessionStorage.getItem('ldc_safe')==='1'&&sessionStorage.getItem('ldc_safe_reason')==='manual';if(!SAFE)sessionStorage.removeItem('ldc_safe');}catch(e){}
 
   /* ---------------- Dil (TR/EN). Kaynak metinler TR; EN sözlükle çevrilir. ---------------- */
   var lang=get('lang',/^tr\b/i.test((navigator.language||navigator.userLanguage||''))?'tr':'en');
   var EN={
-    'Görünüm':'Appearance','Gelişmiş':'Advanced','Sistem':'System','Ses':'Voice','Gizlilik':'Privacy','Tema':'Theme',
+    'Discord aygıt izinlerini sıfırla':'Reset Discord device permissions','Discord aygıt izinleri sıfırlanıyor…':'Resetting Discord device permissions…',
+    'Üst çubukta küçük bir ses simgesi gösterir. Ayrıntılar için üzerine gel veya tıkla.':'Shows a small voice indicator in the top bar. Hover or click for details.',
+    'Ses dosyalarını denetle':'Check voice files','Türkçe ve İngilizce yerel ses motoru hazır.':'Turkish and English offline voice engines are ready.',
+    'Ses dosyaları eksik. Güncel kurulumla uygulamayı onar.':'Voice files are missing. Repair the app with the current installer.',
+    'Türkçe ve İngilizce ses motoru kurulumla birlikte gelir.':'Turkish and English voice engines are included in the installer.',
+    'Odak görünümü':'Focus view','Cam efektleri':'Glass effects','Üye listesini daraltır.':'Hide the member list.','Küçük kontrol yüzeylerindeki cam efektleri.':'Glass effects on small control surfaces.',
+    'Kartım':'My card','Kullanıcı kartım':'My user card','Görünüm':'Appearance','Gelişmiş':'Advanced','Sistem':'System','Ses':'Voice','Gizlilik':'Privacy','Tema':'Theme',
     'Kaydet':'Save','Uygula':'Apply','Dosya':'File','Sıfırla':'Reset','Varsayılan':'Default','Değiştir':'Change','Denetle':'Check','Temizle':'Clear',
     'Normal':'Normal','Tasarruf':'Saver','Yayın':'Stream','Oyun':'Game','Kapalı':'Off','Yumuşak':'Soft','Köşeli':'Sharp','Dengeli':'Balanced',
     'Kaydedildi.':'Saved.','Kaydedildi — açılışta görünür.':'Saved — shows on launch.',
@@ -339,7 +566,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     'Arka plan görseli':'Background image','Görsel çok büyük (~3MB altı olmalı).':'Image too large (must be under ~3MB).','Arka plan (bilgisayardan) uygulandı.':'Background (from your computer) applied.','Arka plan uygulandı.':'Background applied.','Arka plan kaldırıldı.':'Background removed.','Yüzeyler yarı saydam olur, görsel arkada görünür. Kutuyu boşaltıp Uygula ile kaldırılır.':'Surfaces become translucent so the image shows behind. Empty the box and hit Apply to remove.',
     'Özel tema (CSS)':'Custom theme (CSS)','Özel CSS uygula':'Apply custom CSS','Aşağıdaki düzenleyicideki kuralları uygular.':'Applies the rules in the editor below.','CSS Kaydet & Uygula':'Save & apply CSS','Özel CSS kaydedildi ve uygulandı.':'Custom CSS saved and applied.',
     'Sistem ayarları bu panelden ve sistem tepsisi menüsünden aynı kayıtlı ayarları değiştirir.':'System settings change the same saved options from this panel and the tray menu.',
-    'Dil':'Language','Türkçe':'Türkçe','English':'English'
+    'Dil':'Language','Türkçe':'Türkçe','English':'English',
     'Yazma göstergesini gizle':'Hide typing indicator','Karşı taraf sen yazarken "yazıyor..." görmez.':'The other side won\'t see "typing..." when you write.',
     'Markdown önizleme':'Markdown preview','Mesaj yazarken sağ altta canlı önizleme gösterir.':'Shows a live preview bottom-right while typing.',
     'Ekran paylaşımı kontrolleri':'Screen share controls','Paylaşım yaparken üstte durdurma & filigran çubuğu gösterir.':'Shows a stop & watermark bar at the top while sharing.',
@@ -349,6 +576,18 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     'Eklenti yüklendi: ':'Plugin installed: ','Eklenti kaldırıldı.':'Plugin removed.','Eklenti ':'Plugin ',' etkinleştirildi.':' enabled.',' devre dışı bırakıldı.':' disabled.',
     'Markdown':'Markdown','Paylaşım':'Sharing',
   };
+  Object.assign(EN,{
+    'Yerel dinleme':'Local listening','Paket indiriliyor…':'Downloading pack…','Ses paketi gerekli':'Voice pack needed',
+    'Komut dili':'Command language','Ses paketini indir':'Download voice pack','Mikrofon düğmesini denetle':'Check microphone button',
+    'Ayarlar':'Settings','Açık / koyu Aero':'Light / dark Aero','Odak görünümü':'Focus view','Cam efektleri':'Glass effects',
+    'Yerel ses komutu başlatılıyor…':'Starting local voice control…','Yerel ses paketi indiriliyor…':'Downloading local voice pack…',
+    'Mikrofon değişikliği doğrulanamadı.':'Microphone state change could not be confirmed.',
+    'Mikrofon durumu doğrulanamadı; düğmeye dokunulmadı.':'Microphone state is unknown; no action was taken.',
+    'Komutu uygulamak için Kaydet’e bas.':'Press Save to apply the command.',
+    'Kısa komutları cihazında tanır. Dikte servisi yok; ses bilgisayarından çıkmaz. Kapatınca mikrofon ve ses modeli kapanır.':'Recognizes short commands on your device. No dictation service; audio stays on your computer. Turning it off releases the microphone and model.',
+    'Yerel ve çevrimdışı. Ses kaydedilmez veya gönderilmez. Sessizlikte yalnızca ses etkinliği kontrol edilir. Komutu tek başına söyle; uzun konuşmalar işlenmez.':'Local and offline. Audio is never saved or uploaded. Silence only runs the activity gate. Say a command on its own; long conversations are discarded.',
+    'İlk kurulumda Türkçe için yaklaşık 50 MB, İngilizce için 55 MB indirilir. Açıkken model ek bellek kullanır; kapatınca mikrofon ve model serbest bırakılır.':'Initial download: about 50 MB for Turkish or 55 MB for English. The model uses additional memory while enabled and is released with the microphone when disabled.'
+  });
   function tr(s){if(lang!=='en'||s==null)return s;if(EN[s]!=null)return EN[s];
     for(var k in EN){if(k.length>2&&k.charAt(k.length-1)===' '&&k.charAt(k.length-2)===':'&&String(s).indexOf(k)===0)return EN[k]+String(s).slice(k.length);}
     return s;}
@@ -363,23 +602,9 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   }
 
   /* ---------------- Telemetri engelleyici (kategorili + loglu) ---------------- */
-  var blockedCount=0,blockedLog=[],catCount={};
-  var PAT=[
-    {re:/\/science\b/,c:'SCIENCE'},{re:/\/api\/v\d+\/track\b/,c:'TRACK'},{re:/\/metrics\b/,c:'METRICS'},
-    {re:/sentry/i,c:'SENTRY'},{re:/\/api\/v\d+\/applications\/\d+\/analytics/,c:'ANALYTICS'},
-    {re:/error-reporting/i,c:'ERROR'},{re:/crash-reporting/i,c:'CRASH'},{re:/\/rtc\/quality/i,c:'RTC-QoS'},
-    {re:/\/api\/v\d+\/reporting/,c:'REPORTING'},{re:/segment\.(io|com)/i,c:'SEGMENT'},
-    {re:/google-analytics/i,c:'GA'},{re:/doubleclick/i,c:'ADS'}
-  ];
-  function pushLog(cat,u){blockedCount++;catCount[cat]=(catCount[cat]||0)+1;var d=new Date().toISOString().slice(0,10);if(get('blockedDay','')!==d){set('blockedDay',d);set('blockedToday','0');}set('blockedToday',String((parseInt(get('blockedToday','0'),10)||0)+1));blockedLog.push({t:Date.now(),c:cat,u:String(u).replace(/^https?:\/\//,'').split('?')[0].slice(0,90)});if(blockedLog.length>500)blockedLog.shift();}
-  function blocked(u){if(SAFE||!ison('block','1')||!u)return false;try{u=String(u);}catch(e){return false;}for(var i=0;i<PAT.length;i++){if(PAT[i].re.test(u)){pushLog(PAT[i].c,u);return true;}}return false;}
-  // Engellenen isteğe BOŞ değil, geçerli boş-JSON döndür: bir yanıt .json()'lanırsa
-  // Discord'un bootstrap'ı SyntaxError ile çökmesin (beyaz ekran koruması).
-  var of=window.fetch;window.fetch=function(input,init){var u=typeof input==='string'?input:(input&&input.url)||'';if(blocked(u))return Promise.resolve(new Response('{}',{status:200,headers:{'Content-Type':'application/json'}}));return of.apply(this,arguments);};
-  var oo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__ldc=u;return oo.apply(this,arguments);};
-  var os=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(blocked(this.__ldc)){try{this.abort();}catch(e){}return;}return os.apply(this,arguments);};
-  if(navigator.sendBeacon){var ob=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){if(blocked(u))return true;return ob(u,d);};}
+  __LDC_PRIVACY_MODULE__
 
+  function initUI(){
   /* ---------------- Yazma göstergesi engelleyici (WebSocket) ---------------- */
   // Discord typing event'lerini WebSocket üzerinden filtreler.
   // op 4 = VOICE_STATE_UPDATE gibi eventler; d.t === 'TYPING_START' → engelle.
@@ -408,7 +633,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
       get Data(){return{load:function(k){try{return JSON.parse(LS.getItem('ldc_pd_'+k));}catch(e){return null;}},save:function(k,v){try{LS.setItem('ldc_pd_'+k,JSON.stringify(v));}catch(e){}},delete:function(k){try{LS.removeItem('ldc_pd_'+k);}catch(e){}}};},
       get UI(){return{showToast:function(msg,opts){say(msg,(opts&&opts.type)==='error'?C.warn:C.grn);},showConfirmation:function(msg,opts){if(confirm(msg))opts.onConfirm();},get Tooltip(){return{create:function(el,text){el.title=text;return{update:function(t){el.title=t;}};}};}};},
       get Logger(){return{log:function(){console.log.apply(console,arguments);},warn:function(){console.warn.apply(console,arguments);},error:function(){console.error.apply(console,arguments);},info:function(){console.info.apply(console,arguments);}};},
-      get Plugins(){return{get All(){return PLUGINS;},reload:function(){stopPlugins();loadPlugins();},enable:function(id){var p=PLUGINS.find(function(x){return x.id===id;});if(p){p.enabled=true;set('plg_'+id,'1');try{p.plugin.start();}catch(e){}}},disable:function(id){var p=PLUGINS.find(function(x){return x.id===id;});if(p){p.enabled=false;set('plg_'+id,'0');try{p.plugin.stop();}catch(e){}}}};};
+      get Plugins(){return{get All(){return PLUGINS;},reload:function(){stopPlugins();loadPlugins();},enable:function(id){var p=PLUGINS.find(function(x){return x.id===id;});if(p){p.enabled=true;set('plg_'+id,'1');try{p.plugin.start();}catch(e){}}},disable:function(id){var p=PLUGINS.find(function(x){return x.id===id;});if(p){p.enabled=false;set('plg_'+id,'0');try{p.plugin.stop();}catch(e){}}}};}
     };
   }
   function runPlugin(id,code){
@@ -452,7 +677,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   function mdPreview(text){if(!text)return '';var t=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');try{t=MD_SIMPLE.codeblock(t);t=MD_SIMPLE.code(t);t=MD_SIMPLE.bold(t);t=MD_SIMPLE.italic(t);t=MD_SIMPLE.strike(t);t=MD_SIMPLE.underline(t);t=MD_SIMPLE.link(t);t=MD_SIMPLE.mention(t);t=MD_SIMPLE.channel(t);t=MD_SIMPLE.emoji(t);t=MD_SIMPLE.bullet(t);t=MD_SIMPLE.numbered(t);t=MD_SIMPLE.br(t);}catch(e){}return t;}
   function ensureMdEditor(){
     if(MD_EDITOR&&document.contains(MD_EDITOR))return;
-    MD_EDITOR=mk('div',{position:'fixed',right:'16px',bottom:'160px',zIndex:'2147482990',width:'380px',maxHeight:'280px',background:'rgba(30,31,34,.97)',border:'1px solid '+C.line,borderRadius:'12px',boxShadow:'0 16px 40px rgba(0,0,0,.5)',overflow:'hidden',display:'none',flexDirection:'column',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",color:C.fg,backdropFilter:'blur(14px)'});
+    MD_EDITOR=mk('div',{position:'fixed',right:'16px',bottom:'160px',zIndex:'2147482990',width:'380px',maxHeight:'280px',background:'rgba(30,31,34,.97)',border:'1px solid '+C.line,borderRadius:'12px',boxShadow:'0 16px 40px rgba(0,0,0,.5)',overflow:'hidden',display:'none',flexDirection:'column',fontFamily:"'Segoe UI','gg sans',system-ui,sans-serif",color:C.fg,backdropFilter:'blur(14px)'});
     MD_EDITOR.id='ldc-md-preview';
     var hd=mk('div',{padding:'10px 14px',borderBottom:'1px solid '+C.line,display:'flex',alignItems:'center',justifyContent:'space-between'});
     hd.appendChild(mk('div',{fontSize:'12px',fontWeight:'800',color:C.hl,display:'flex',alignItems:'center',gap:'7px'},''));
@@ -475,51 +700,9 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   }
   setInterval(function(){if(ison('mdPreview','0'))attachMdToTextarea();},3000);
 
-  /* ---------------- Ekran paylaşımı kontrol çubuğu ---------------- */
-  var SS_BAR=null,SS_WATERMARK=null,ssWatcher=null;
-  function ensureSSBar(){
-    if(SS_BAR&&document.contains(SS_BAR))return;
-    SS_BAR=mk('div',{position:'fixed',top:'10px',left:'50%',transform:'translateX(-50%)',zIndex:'2147483005',display:'none',alignItems:'center',gap:'8px',padding:'8px 16px',background:'rgba(17,18,20,.96)',border:'1px solid rgba(255,255,255,.12)',borderRadius:'20px',boxShadow:'0 8px 32px rgba(0,0,0,.45)',backdropFilter:'blur(12px)',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",fontSize:'13px',color:C.hl});
-    SS_BAR.id='ldc-ss-bar';
-    var dot=mk('div',{width:'9px',height:'9px',borderRadius:'50%',background:'#f23f42',flex:'0 0 auto',boxShadow:'0 0 0 3px rgba(242,63,66,.3)'});
-    SS_BAR._status=mk('span',{fontWeight:'600'},'Ekran paylaşılıyor');
-    SS_BAR._timer=mk('span',{color:C.mut,fontSize:'12px'},'');
-    SS_BAR._wmBtn=mk('div',{cursor:'pointer',padding:'4px 10px',borderRadius:'12px',fontSize:'12px',border:'1px solid '+C.line,color:C.mut,transition:'all .14s'},'Filigran');
-    hover(SS_BAR._wmBtn,'transparent',C.field);
-    SS_BAR._wmBtn.onclick=function(){if(ison('ssWatermark','0')){set('ssWatermark','0');SS_BAR._wmBtn.style.borderColor=C.acc;SS_BAR._wmBtn.style.color=C.acc;showWatermark();say('Filigran eklendi.');}else{set('ssWatermark','1');SS_BAR._wmBtn.style.borderColor=C.line;SS_BAR._wmBtn.style.color=C.mut;hideWatermark();say('Filigran kaldırıldı.');}};
-    SS_BAR._stop=mk('div',{cursor:'pointer',padding:'4px 12px',borderRadius:'12px',background:C.red,color:'#fff',fontWeight:'600',fontSize:'12px',transition:'all .14s'},'Durdur');
-    hover(SS_BAR._stop,C.red,'#c93638');
-    SS_BAR._stop.onclick=function(){var btns=document.querySelectorAll('[aria-label*="Stop"],[aria-label*="Durdur"],[aria-label*="Stream"],[aria-label*="Yayın"]');btns.forEach(function(b){try{if(visible(b))b.click();}catch(e){}});};
-    SS_BAR.appendChild(dot);SS_BAR.appendChild(SS_BAR._status);SS_BAR.appendChild(SS_BAR._timer);SS_BAR.appendChild(SS_BAR._wmBtn);SS_BAR.appendChild(SS_BAR._stop);
-    (document.body||document.documentElement).appendChild(SS_BAR);
-  }
-  function showWatermark(){
-    if(SS_WATERMARK)return;
-    SS_WATERMARK=mk('div',{position:'fixed',inset:'0',zIndex:'2147483004',pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'});
-    var tm=mk('div',{color:'rgba(255,255,255,.18)',fontSize:'clamp(24px,5vw,52px)',fontWeight:'800',letterSpacing:'6px',textShadow:'0 0 20px rgba(0,0,0,.5)',transform:'rotate(-15deg)',userSelect:'none',fontFamily:"'Cascadia Code','Consolas',monospace"},'idgafcord');
-    SS_WATERMARK.appendChild(tm);
-    (document.body||document.documentElement).appendChild(SS_WATERMARK);
-  }
-  function hideWatermark(){if(SS_WATERMARK&&SS_WATERMARK.parentNode)SS_WATERMARK.parentNode.removeChild(SS_WATERMARK);SS_WATERMARK=null;}
-  function detectScreenShare(){
-    var indicators=document.querySelectorAll('[class*="streamTile_"],[class*="screen_"],[class*="streamPreview_"],video[class*="stream_"]');
-    var panels=document.querySelectorAll('[class*="panel_"] [class*="live_"]', '[class*="status_"][class*="streaming_"]');
-    return indicators.length>0;
-  }
-  function updateSSBar(){
-    if(!ison('ssControls','1')){if(SS_BAR)SS_BAR.style.display='none';return;}
-    ensureSSBar();
-    if(detectScreenShare()||(SS_BAR._started&&Date.now()-SS_BAR._started<8000)){
-      SS_BAR.style.display='flex';
-      if(!SS_BAR._started){SS_BAR._started=Date.now();if(ison('ssWatermark','0'))showWatermark();}
-      var elapsed=Math.floor((Date.now()-SS_BAR._started)/1000);
-      SS_BAR._timer.textContent=Math.floor(elapsed/60)+':'+('0'+(elapsed%60)).slice(-2);
-    }else{
-      SS_BAR.style.display='none';SS_BAR._started=null;hideWatermark();
-    }
-  }
-  setInterval(function(){if(ison('ssControls','1'))updateSSBar();},3000);
-
+  __LDC_SCREENSHARE_MODULE__
+  __LDC_WORKSPACE_MODULE__
+  __LDC_ECOSYSTEM_MODULE__
 
   /* ---------------- CSS motoru (CSP-geçirmez) ---------------- */
   function Styler(){this.sheet=null;this.el=null;try{this.sheet=new CSSStyleSheet();document.adoptedStyleSheets=[].concat(Array.prototype.slice.call(document.adoptedStyleSheets||[]),[this.sheet]);}catch(e){this.sheet=null;}}
@@ -546,7 +729,9 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   }
   // Tekrar eden (kayan yıldız animasyonu için) yıldız alanı deseni.
   var STAR_BG='background-color:#04050c !important;background-image:radial-gradient(1.3px 1.3px at 20px 30px,#fff,transparent),radial-gradient(1px 1px at 120px 90px,#cfe0ff,transparent),radial-gradient(1.4px 1.4px at 60px 200px,#fff,transparent),radial-gradient(1px 1px at 160px 320px,#b9c9ff,transparent),radial-gradient(1px 1px at 30px 470px,#fff,transparent),radial-gradient(1.2px 1.2px at 140px 560px,#e0d4ff,transparent) !important;background-size:200px 600px !important;background-repeat:repeat !important;';
+  __LDC_AERO_MODULE__
   var THEMES={
+    aero:buildAeroTheme(false),aeroDark:buildAeroTheme(true),
     off:'',
     midnight:buildTheme(['#050506','#09090c','#0e0e11','#16161a','#1c1c20','#212126'],''),
     space:buildTheme(['#04050c','#070912','#0b0e1c','#12162b','#181d38','#1f2547'],'#7c5cff','[class*="guilds_"]{'+STAR_BG+'}'),
@@ -595,28 +780,29 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(font){font=font.replace(/["'\\;{}]/g,'');s+=BASE_SEL+'{--font-primary:"'+font+'",sans-serif !important;--font-display:"'+font+'",sans-serif !important;--font-headline:"'+font+'",sans-serif !important;}';}
     if(ison('hideMembers','0'))s+='[class*="membersWrap_"]{display:none !important;}';
     if(ison('bubbles','0'))s+=
-      // Balon = sadece metin kutusu. Dikey dolguyu negatif margin ile telafi et →
-      // mesajın DIŞ yüksekliği ~sabit kalır, Discord'un sanal listesi kaymaz (üst üste binme yok).
-      // Kenarlık ve gölge YOK → art arda balonlar arasında çizgi/dikiş görünmez.
-      '[class*="messageContent_"]{background:var(--background-base-higher) !important;padding:5px 13px !important;margin:-5px 0 !important;border-radius:16px !important;width:fit-content !important;max-width:76% !important;box-sizing:border-box !important;transition:background .12s !important;}'+
-      '[class*="messageContent_"]:hover{background:var(--background-base-highest) !important;}'+
+      // Bir mesaj tek blok kutusudur; satırlar ayrı pillere bölünmez.
+      // Pozitif boşluk ve doğal yükseklik sanal listenin ölçümünü korur.
+      // Metin kutusu dışındaki avatar ve ek yerleşimine dokunulmaz.
+      '[id^="message-content-"]{display:block !important;background:var(--aero-bubble-fill,var(--background-base-higher)) !important;padding:7px 12px !important;margin:3px 0 !important;border:1px solid var(--aero-line,transparent) !important;border-radius:15px !important;box-shadow:var(--aero-bubble-shadow,none) !important;width:fit-content !important;max-width:min(100%,72ch) !important;box-sizing:border-box !important;overflow-wrap:anywhere !important;box-decoration-break:slice !important;-webkit-box-decoration-break:slice !important;}'+
+      '[id^="message-content-"] :is(pre,code){max-width:100%;}'+
+      '[id^="message-content-"] pre{overflow:auto;}'+
       // Sadece-görsel/embed mesajlarda boş balon çıkmasın.
-      '[class*="messageContent_"]:empty{display:none !important;}'+
+      '[id^="message-content-"]:empty{display:none !important;}'+
       // Art arda AYNI kişinin mesajları BİRLEŞİK: bitişik köşeleri düzleştir (dikişsiz).
-      '[class*="groupStart_"] [class*="messageContent_"]{border-bottom-left-radius:6px !important;}'+
-      '[class*="cozyMessage_"]:not([class*="groupStart_"]) [class*="messageContent_"]{border-top-left-radius:6px !important;border-bottom-left-radius:6px !important;}'+
+      '[class*="groupStart_"] [id^="message-content-"]{border-bottom-left-radius:6px !important;}'+
+      '[class*="cozyMessage_"]:not([class*="groupStart_"]) [id^="message-content-"]{border-top-left-radius:6px !important;border-bottom-left-radius:6px !important;}'+
       // Alıntı (reply): kıvrım çizgisini gizle; sade, sönük, nötr bir alıntı bloğu.
       '[class*="messageSpine_"]{display:none !important;}'+
-      '[class*="repliedMessage_"]{background:rgba(128,132,142,.10) !important;border-radius:8px !important;padding:3px 12px !important;margin:0 0 5px 2px !important;width:fit-content !important;max-width:88% !important;box-sizing:border-box !important;opacity:.82 !important;}'+
+      '[class*="repliedMessage_"]{display:flex !important;align-items:center !important;gap:6px !important;background:transparent !important;border:none !important;border-radius:0 !important;padding:2px 0 !important;margin:0 0 4px !important;width:100% !important;max-width:72ch !important;min-width:0 !important;min-height:22px !important;height:auto !important;box-sizing:border-box !important;opacity:1 !important;}'+
       // Alıntı metninin kesme sınırını aç → mesajın çok daha fazlası görünsün.
-      '[class*="repliedMessage_"] [class*="repliedText"]{max-width:none !important;}'+
+      '[class*="repliedMessage_"] [class*="repliedText"]{min-width:0 !important;}'+
       // Yeni yazar bloğuna üstten nefes payı (padding = ölçülür, kaymaz).
       '[class*="groupStart_"]{padding-top:14px !important;}';
     return s;
   }
 
   /* Eski 'themeOn' ayarını yeni 'theme' seçicisine taşı */
-  if(get('theme',null)===null){set('theme',ison('themeOn','0')?'midnight':'off');}
+  if(get('theme',null)===null){var legacyTheme=get('themeOn',null);set('theme',legacyTheme===null?'aeroDark':legacyTheme==='1'?'midnight':'off');}
 
   var TERM_CSS=
     '.ldc-term{background:#080b10;border:1px solid #1c2733;border-radius:8px;padding:8px 10px;'+
@@ -632,44 +818,21 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     '.k-SCIENCE{color:#58a6ff}.k-TRACK{color:#d29922}.k-METRICS{color:#3fb950}.k-SENTRY{color:#f85149}'+
     '.k-ANALYTICS{color:#bc8cff}.k-ERROR{color:#f85149}.k-CRASH{color:#f85149}.k-RTC-QoS{color:#39c5cf}'+
     '.k-REPORTING{color:#d29922}.k-SEGMENT{color:#ff7b72}.k-GA{color:#e3b341}.k-ADS{color:#ff7b72}.k-EXPERIMENTS{color:#a5d6ff}';
-  var SPLASH_CSS=
-    '#ldc-splash{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;background:#08080a;animation:ldcSpIn .3s ease}'+
-    '#ldc-splash.out{animation:ldcSpOut .55s ease forwards;pointer-events:none}'+
-    ".ldc-sp-wrap{text-align:center;font-family:'gg sans','Segoe UI',system-ui,sans-serif}"+
-    '.ldc-sp-mark{width:136px;height:136px;object-fit:contain;display:block;margin:0 auto 12px;opacity:0;transform:translateY(18px) scale(.94);filter:drop-shadow(0 18px 42px rgba(124,92,255,.35));animation:ldcPop .95s .05s cubic-bezier(.16,1,.3,1) forwards}'+
-    '.ldc-sp-logo{font-size:52px;font-weight:800;line-height:1.12;color:#fafafa;opacity:0;transform:translateY(20px);animation:ldcPop .95s .18s cubic-bezier(.16,1,.3,1) forwards}'+
-    '.ldc-sp-logo b{color:#8f7cff;font-weight:800}'+
-    '@keyframes ldcPop{to{opacity:1;transform:none}}'+
-    '.ldc-sp-line{height:1px;width:0;margin:24px auto 0;background:#26262b;animation:ldcLine .85s .65s cubic-bezier(.16,1,.3,1) forwards}'+
-    '@keyframes ldcLine{to{width:240px}}'+
-    ".ldc-sp-tag{margin-top:20px;font-size:11px;font-weight:500;letter-spacing:4px;color:#57575e;font-family:'Cascadia Code','JetBrains Mono','Consolas',monospace;opacity:0;animation:ldcUp .8s .8s ease forwards}"+
-    '@keyframes ldcUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}'+
-    '@keyframes ldcSpIn{from{opacity:0}to{opacity:1}}@keyframes ldcSpOut{from{opacity:1}to{opacity:0}}';
+  var SPLASH_CSS=__LDC_SPLASH_CSS__;
+  var SETTINGS_CSS=__LDC_SETTINGS_CSS__;
   var VOICE_CSS=
     '.ldc-vdot{width:9px;height:9px;border-radius:50%;background:#23a55a;flex:0 0 auto;animation:ldcpulse 1.6s ease-out infinite}'+
     '@keyframes ldcpulse{0%{box-shadow:0 0 0 0 rgba(35,165,90,.55)}70%{box-shadow:0 0 0 7px rgba(35,165,90,0)}100%{box-shadow:0 0 0 0 rgba(35,165,90,0)}}';
   var themeSt=new Styler(),accentSt=new Styler(),uiSt=new Styler(),structSt=new Styler(),starsSt=new Styler(),bgSt=new Styler(),upSt=new Styler(),cssSt=new Styler(),panelSt=new Styler();
-  panelSt.set(TERM_CSS+SPLASH_CSS+VOICE_CSS);
-  function splash(){try{
-    if(SAFE||!ison('splash','1')||document.getElementById('ldc-splash'))return;
-    var host=document.body||document.documentElement;if(!host)return;
-    var s=document.createElement('div');s.id='ldc-splash';
-    s.innerHTML='<div class="ldc-sp-wrap"><img class="ldc-sp-mark" src="'+LDC_LOGO_DATA_URI+'" alt=""><div class="ldc-sp-logo"><b>idgaf</b>cord</div><div class="ldc-sp-line"></div><div class="ldc-sp-tag">I DON’T GIVE A FUCK ABOUT YOUR DATA</div></div>';
-    host.appendChild(s);
-    // Splash'i KESİNLİKLE kaldır. setTimeout gizli/occluded pencerede kısılabilir
-    // ve siyah splash ekranda takılı kalabilir; bu yüzden çok yönlü güvence:
-    // süre + Discord çizildi + görünürlük + ilk etkileşim + gerçek-zaman tavanı.
-    var born=Date.now(),done=false;
-    function kill(){if(done)return;done=true;try{s.className='out';}catch(e){}setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},560);}
-    var iv=setInterval(function(){if(done){clearInterval(iv);return;}if(Date.now()-born>2300||ldcRendered()){clearInterval(iv);kill();}},250);
-    (function raf(){if(done)return;if(Date.now()-born>6000){kill();return;}try{requestAnimationFrame(raf);}catch(e){kill();}})();
-    document.addEventListener('click',kill,true);
-    document.addEventListener('keydown',kill,true);
-    document.addEventListener('visibilitychange',function(){if(!document.hidden&&Date.now()-born>1200)kill();});
-  }catch(e){}}
+  panelSt.set(TERM_CSS+SPLASH_CSS+VOICE_CSS+SETTINGS_CSS+__LDC_CARD_CSS__+__LDC_CINEMA_CSS__);
+  __LDC_SPLASH_MODULE__
+  __LDC_STARTUP_MODULE__
   function applyAll(){
+    syncAero();
+    syncWorkspace();
+    syncAppearance();
     if(SAFE){themeSt.set('');accentSt.set('');uiSt.set('');structSt.set('');starsSt.set('');bgSt.set('');upSt.set('');cssSt.set('');return;}
-    themeSt.set(THEMES[get('theme','off')]||'');
+    themeSt.set(THEMES[get('theme','aeroDark')]||'');
     var ac=get('accent','');accentSt.set(ac?BASE_SEL+'{'+accentVars(ac)+'}':'');
     uiSt.set(uiCSS());
     structSt.set(structCSS());
@@ -685,9 +848,9 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   function showLoadIssue(){
     if(document.getElementById('ldc-load-issue'))return;
     var host=document.body||document.documentElement;if(!host)return;
-    var box=mk('div',{position:'fixed',left:'50%',top:'76px',transform:'translateX(-50%)',zIndex:'2147482998',width:'min(440px,calc(100vw - 32px))',background:'rgba(30,31,34,.96)',border:'1px solid rgba(216,15,18,.45)',borderRadius:'8px',padding:'14px',boxShadow:'0 14px 38px rgba(0,0,0,.42)',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",color:'#f2f3f5'});
+    var box=mk('div',{position:'fixed',left:'50%',top:'76px',transform:'translateX(-50%)',zIndex:'2147482998',width:'min(440px,calc(100vw - 32px))',background:'var(--ldc-ui-bg,#0b2032)',border:'1px solid var(--ldc-ui-line,#304557)',borderRadius:'8px',padding:'14px',boxShadow:'0 14px 38px rgba(0,0,0,.24)',fontFamily:'"Segoe UI",Tahoma,sans-serif',color:'var(--ldc-ui-fg,#e0f5fb)'});
     box.id='ldc-load-issue';
-    box.appendChild(mk('div',{fontSize:'15px',fontWeight:'800'},'Discord yüklenemedi'));
+    box.appendChild(mk('div',{fontSize:'15px',fontWeight:'600'},navigator.onLine?(lang==='en'?'Waiting for Discord':'Discord yanıtı bekleniyor'):(lang==='en'?'You are offline':'İnternet bağlantısı yok')));
     box.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',lineHeight:'1.45',marginTop:'4px'},'İnternet, Discord oturumu veya WebView geçici sorun yaşamış olabilir.'));
     var row=mk('div',{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'12px'});
     var r=mkBtn('Yenile',true),c=mkBtn('Kapat',false);
@@ -696,295 +859,27 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   }
   window.addEventListener('offline',showLoadIssue);
   window.addEventListener('online',function(){var e=document.getElementById('ldc-load-issue');if(e&&e.parentNode)e.parentNode.removeChild(e);});
-  setTimeout(function(){var ok=document.querySelector('[class*="app_"],[class*="layers_"],[data-list-id="guildsnav"]');if(!ok&&location.hostname.indexOf('discord.com')>=0)showLoadIssue();},14000);
+  setTimeout(function(){if(!ldcRendered())showLoadIssue();},14000);
 
   // Discord render oldu mu? (beyaz/siyah ekran yakalayıcı)
-  function ldcRendered(){return !!document.querySelector('[class*="app_"],[class*="appMount"],[class*="appAsidePanelWrapper"],[class*="base_"],[class*="layers_"],[class*="sidebarList"],[data-list-id="guildsnav"]');}
+  function ldcRendered(){return !!document.querySelector('[data-list-id="guildsnav"],[class*="chatContent_"],form input[name="email"],form input[type="password"],[class*="qrCode_"]');}
   function ldcSafeNotice(){
     if(document.getElementById('ldc-safe-note'))return;
     var host=document.body||document.documentElement;if(!host)return;
-    var b=mk('div',{position:'fixed',left:'12px',bottom:'12px',zIndex:'2147482996',maxWidth:'330px',padding:'11px 13px',borderRadius:'10px',background:'rgba(35,37,42,.97)',border:'1px solid rgba(240,178,50,.55)',color:'#f2f3f5',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",fontSize:'12px',lineHeight:'1.45',boxShadow:'0 14px 38px rgba(0,0,0,.45)'});
+    var b=mk('div',{position:'fixed',left:'12px',bottom:'12px',zIndex:'2147482996',maxWidth:'330px',padding:'11px 13px',borderRadius:'10px',background:'rgba(35,37,42,.97)',border:'1px solid rgba(240,178,50,.55)',color:'#f2f3f5',fontFamily:"'Segoe UI','gg sans',system-ui,sans-serif",fontSize:'12px',lineHeight:'1.45',boxShadow:'0 14px 38px rgba(0,0,0,.45)'});
     b.id='ldc-safe-note';
-    b.innerHTML='<div style="font-weight:800;margin-bottom:3px">Güvenli mod</div>Discord yüklenemediği için tema, özel CSS ve engelleme bu oturumda geçici kapatıldı. <b>Ayarların korundu.</b> Uygulamayı yeniden başlatınca normale döner.';
+    b.innerHTML='<div style="font-weight:600;margin-bottom:3px">Güvenli mod</div>Elle sorun giderme seçildiği için tema, özel CSS ve engelleme bu oturumda geçici kapatıldı. Ayarların korundu.';
     host.appendChild(b);
   }
-  // Discord ~13 sn içinde çizilmezse: ilk seferde bizim müdahalelerimizi bu oturum
-  // için kapatıp BİR KEZ yeniden yükle (döngü koruması: sessionStorage bayrağı).
-  function ldcRenderCheck(){
-    try{
-      if(location.hostname.indexOf('discord.com')<0||ldcRendered())return;
-      if(SAFE){ldcSafeNotice();return;}
-      try{sessionStorage.setItem('ldc_safe','1');}catch(e){}
-      location.reload();
-    }catch(e){}
-  }
-  setTimeout(ldcRenderCheck,13000);
+  // A slow network is not evidence of a broken theme. Recovery is manual only.
   if(SAFE)setTimeout(function(){if(!ldcRendered())ldcSafeNotice();},2000);
 
-  function textOf(el){return ((el&&((el.getAttribute('aria-label')||'')+' '+(el.getAttribute('title')||'')+' '+(el.textContent||'')))||'').toLowerCase();}
-  function visible(el){var r=el.getBoundingClientRect();return r.width>8&&r.height>8&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;}
-  // Aynı fiziksel düğme hem sustur hem aç için kullanılsın diye önbelleğe alınır.
-  var micBtnCache=null,micLiveSig=null,micMutedSig=null;
-  function micButton(){
-    if(micBtnCache&&document.contains(micBtnCache)&&visible(micBtnCache))return micBtnCache;
-    micBtnCache=null;
-    var nodes=Array.prototype.slice.call(document.querySelectorAll('button,[role="button"],[aria-label]'));
-    var best=null,bestScore=-1;
-    nodes.forEach(function(el){
-      if(!visible(el))return;
-      var t=textOf(el),score=0;
-      if(!t)return;
-      if(/microphone|mikrofon/.test(t))score+=80;
-      if(/(^|\s)(mute|unmute)(\s|$)|sustur|susturmayı aç|sesini aç|sesi aç/.test(t))score+=50;
-      if(/deafen|kulak|sağır|sagir|bildirim|notification|channel|server|sunucu|kanal|soundboard|activity|etkinlik|kamera|camera|video|ekran|screen|share|yayın|paylaş|hang ?up|ayrıl|disconnect|çıkış/.test(t))score-=95;
-      var r=el.getBoundingClientRect();
-      if(r.left<440&&r.top>innerHeight-220)score+=60;
-      if(el.tagName==='BUTTON')score+=8;
-      if(score>bestScore){bestScore=score;best=el;}
-    });
-    if(bestScore>45){micBtnCache=best;return best;}
-    return null;
-  }
-  // Durum "imzası": yazı + aria + ikon boyutu. Buton yazısı değişmese bile ikon
-  // (kapalıda çapraz çizgi) değiştiği için imza sustur/aç arasında farklılaşır.
-  function micSig(btn){btn=btn||micButton();if(!btn)return '';var s=btn.querySelector('svg');return normVoice(textOf(btn))+'|'+btn.getAttribute('aria-pressed')+'|'+btn.getAttribute('aria-checked')+'|'+(s?s.innerHTML.length:0);}
-  // Mikrofon durumunu ÇOK sinyalli oku: (1) öğrenilmiş imza, (2) yazı, (3) aria.
-  function micMuteState(btn){
-    btn=btn||micButton();if(!btn)return null;
-    var sig=micSig(btn);
-    if(micMutedSig&&sig===micMutedSig)return 'muted';
-    if(micLiveSig&&sig===micLiveSig)return 'live';
-    var t=normVoice(textOf(btn));
-    if(/\bunmute\b|kaldir|(^|\s)ac(\s|$)|sesini ac|sesi ac|mikrofonu ac|mikrofon ac|susturmayi/.test(t))return 'muted';
-    if(/\bmute\b|sustur|sessiz|kapat|kapa/.test(t))return 'live';
-    var ap=btn.getAttribute('aria-pressed'),ac=btn.getAttribute('aria-checked');
-    if(ap==='true'||ac==='true')return 'muted';
-    if(ap==='false'||ac==='false')return 'live';
-    return null;
-  }
-  // Sağlam susturma/açma: buton yazısı statik olsa bile çalışır.
-  //  - aç komutunda YALNIZCA öğrenilmiş "açık" imzasıyla eşleşiyorsa dokunmaz;
-  //    aksi halde tıklar (kapalıysa açar). Yanlışlıkla ters yöne gidersek geri alır.
-  //  - her tıklamadan sonra o durumun imzasını ÖĞRENİR → sonraki okumalar kesinleşir.
-  // "Kesin AÇIK mı?" — sadece ÖĞRENİLMİŞ imza ya da aria bayrağı güven verir.
-  // Yalın "Mute/Sustur" yazısı TEK BAŞINA güven sayılmaz (statik olabilir); bu
-  // yüzden aç komutu, açık olduğundan emin değilse tıklar → kapalıysa gerçekten açar.
-  function micConfidentLive(btn,sig){
-    if(micLiveSig&&sig===micLiveSig)return true;
-    var ap=btn.getAttribute('aria-pressed'),ac=btn.getAttribute('aria-checked');
-    return ap==='false'||ac==='false';
-  }
-  function micConfidentMuted(btn,sig){
-    if(micMutedSig&&sig===micMutedSig)return true;
-    var ap=btn.getAttribute('aria-pressed'),ac=btn.getAttribute('aria-checked');
-    if(ap==='true'||ac==='true')return true;
-    var t=normVoice(textOf(btn));
-    return /\bunmute\b|kaldir|susturmayi|sesini ac|sesi ac|mikrofonu ac|mikrofon ac/.test(t);
-  }
-  function setMic(desired){
-    var btn=micButton();if(!btn)return false;
-    var sig=micSig(btn),st=micMuteState(btn),click;
-    if(!desired||desired==='toggle')click=true;
-    else if(desired==='mute')click=!micConfidentMuted(btn,sig);
-    else click=!micConfidentLive(btn,sig);
-    if(click){
-      try{btn.click();}catch(e){return false;}
-      // Tıkladıktan sonra ulaşılan durumun imzasını ÖĞREN → sonraki okumalar kesinleşir.
-      setTimeout(function(){var s2=micSig(btn);if(desired==='mute')micMutedSig=s2;else if(desired==='unmute')micLiveSig=s2;updateMicBadge();},300);
-    }
-    return {found:true,clicked:click,state:st};
-  }
-  window.__LDC_toggleMute=function(){var ok=setMic('toggle');if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return !!ok;};
-  window.__LDC_setMute=function(v){var ok=setMic(v);if(!ok)say('Mikrofon düğmesi bulunamadı.',C.warn);return !!ok;};
+  __LDC_VOICE_MODULE__
 
-  var voiceRec=null,voiceActive=false,voiceRestartTimer=null,voiceWatchdog=null,voiceLastAction='',voiceLastActedAt=0,voiceAlive=0;
-  var voiceStarting=false,voiceStartedAt=0,voiceFails=0,voiceHardErr=false,voiceGaveUp=false;
-  var voiceHud=null,voiceHudDot=null,voiceHudTxt=null,voiceHudTimer=null,voiceStatusEl=null;
-  // Türkçe karakterleri sadeleştir + noktalama temizle → eşleştirme kolaylaşır.
-  function normVoice(s){return String(s||'').toLowerCase()
-    .replace(/[ıİ]/g,'i').replace(/[ğĞ]/g,'g').replace(/[üÜ]/g,'u').replace(/[şŞ]/g,'s').replace(/[öÖ]/g,'o').replace(/[çÇ]/g,'c')
-    .replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();}
-  // Komut çözümleyici: normalize edilmiş metinde niyeti bulur. Yanlış tetiklemeyi
-  // azaltmak için (özel ifade hariç) mikrofon/ses anahtarı + fiil şartı aranır.
-  // Belirlenen prefix'i ESNEK eşleştir: birebir geçmese de kelimelerin kökleri
-  // geçiyorsa kabul et (ekler/çekimler ve tanıma sapmaları için tolerans).
-  function phraseHit(t,phrase){
-    phrase=normVoice(phrase);if(!phrase)return false;
-    if(t.indexOf(phrase)>=0)return true;
-    var ws=phrase.split(' ').filter(function(w){return w.length>=2;});
-    if(!ws.length)return false;
-    return ws.every(function(w){var stem=w.length>=4?w.slice(0,w.length-1):w;return t.indexOf(stem)>=0;});
-  }
-  function matchVoiceCommand(t){
-    if(phraseHit(t,get('voiceUnmutePhrase',lang==='en'?'unmute':'mikrofonu aç')))return 'unmute';
-    if(phraseHit(t,get('voiceMutePhrase',lang==='en'?'mute':'mikrofonu kapat')))return 'mute';
-    var mic=/\b(mikrofon\w*|mikp\w*|ses|sesi|sesim\w*|kendimi)\b/.test(t);
-    if(/\bunmute\b|\bkonusabilir\w*\b/.test(t))return 'unmute';
-    if(mic&&/\b(ac|acar|acsana|acabilir|acalim|geri ?ac|acin)\b/.test(t))return 'unmute';
-    if(/\bmute\b|\bsustur\w*\b|\bsessiz\w*\b/.test(t))return 'mute';
-    if(mic&&/\b(kapat\w*|kapa|kes)\b/.test(t))return 'mute';
-    if(mic&&/\b(degistir\w*|toggle|ac ?kapa)\b/.test(t))return 'toggle';
-    return null;
-  }
-  function actVoice(t){
-    var cmd=matchVoiceCommand(t);if(!cmd)return false;
-    var now=Date.now();
-    // Aynı komutu 1.6 sn içinde tekrar uygulama (interim + final çift tetiklemesini engeller).
-    if(cmd===voiceLastAction&&now-voiceLastActedAt<1600)return true;
-    voiceLastAction=cmd;voiceLastActedAt=now;
-    var r=setMic(cmd);
-    if(!r){voiceHudFlash('Mikrofon düğmesi bulunamadı','warn');say('Mikrofon düğmesi bulunamadı — ses kanalındayken dene.',C.warn);return true;}
-    // Gerçekten tıklandı mı ona göre DÜRÜST geri bildirim (zaten açık/kapalıysa yanlış demez).
-    var msg;
-    if(cmd==='mute')msg=r.clicked?'Mikrofon kapatıldı':'Mikrofon zaten kapalı';
-    else if(cmd==='unmute')msg=r.clicked?'Mikrofon açıldı':'Mikrofon zaten açık';
-    else msg='Mikrofon değiştirildi';
-    voiceHudFlash(msg,cmd);
-    say('Ses komutu: '+msg+'.');
-    return true;
-  }
-  // Eski isim (geriye dönük uyumluluk).
-  function handleVoice(s){return actVoice(normVoice(s));}
-
-  function micState(){var s=micMuteState();return s==='muted'?'muted':(s==='live'?'live':'unknown');}
-  function updateMicBadge(){
-    if(!micBadge||!ison('micBadge','1'))return;
-    var s=micState(),on=s==='live';
-    micBadge.textContent=tr(s==='unknown'?'Mikrofon ?':(on?'Mikrofon açık':'Mikrofon kapalı'));
-    micBadge.style.background=on?'rgba(35,165,90,.92)':'rgba(216,15,18,.92)';
-  }
-  function ensureMicBadge(){
-    if(!ison('micBadge','1')){if(micBadge)micBadge.style.display='none';return;}
-    if(!micBadge){micBadge=mk('div',{position:'fixed',left:'16px',bottom:'18px',zIndex:'2147482999',padding:'7px 11px',borderRadius:'18px',fontSize:'12px',fontWeight:'700',color:'#fff',boxShadow:'0 8px 26px rgba(0,0,0,.35)',pointerEvents:'none'});(document.body||document.documentElement).appendChild(micBadge);}
-    micBadge.style.display='block';updateMicBadge();
-  }
-  // Sesle komut için sol-altta canlı durum balonu (dinleniyor / son komut).
-  function ensureVoiceHud(){
-    if(!voiceHud){
-      voiceHud=mk('div',{position:'fixed',left:'16px',bottom:'52px',zIndex:'2147482997',display:'flex',alignItems:'center',gap:'8px',padding:'7px 13px 7px 11px',borderRadius:'20px',background:'rgba(20,21,24,.93)',border:'1px solid rgba(255,255,255,.09)',boxShadow:'0 8px 26px rgba(0,0,0,.42)',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif",fontSize:'12px',fontWeight:'600',color:'#e6e8ea',maxWidth:'320px',pointerEvents:'none',transition:'border-color .18s',backdropFilter:'blur(8px)'});
-      voiceHudDot=mk('span',{});voiceHudDot.className='ldc-vdot';
-      voiceHudTxt=mk('span',{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},tr('Dinleniyor…'));
-      voiceHud.appendChild(voiceHudDot);voiceHud.appendChild(voiceHudTxt);
-      (document.body||document.documentElement).appendChild(voiceHud);
-    }
-    voiceHud.style.display='flex';
-  }
-  function voiceHudState(mode){ // 'listen' | 'idle' | 'error'
-    if(!voiceHudDot)return;
-    voiceHudDot.style.background=mode==='error'?'#f0b232':(mode==='listen'?'#23a55a':'#80848e');
-    voiceHudDot.style.animationPlayState=mode==='listen'?'running':'paused';
-  }
-  function voiceHudFlash(text,kind){ // kind: 'mute' | 'unmute' | 'heard' | 'warn'
-    if(!voiceHud)return;
-    voiceHudTxt.textContent=tr(text);
-    voiceHud.style.borderColor=kind==='mute'?'rgba(216,15,18,.65)':(kind==='unmute'?'rgba(35,165,90,.65)':(kind==='warn'?'rgba(240,178,50,.65)':'rgba(255,255,255,.09)'));
-    if(voiceHudTimer)clearTimeout(voiceHudTimer);
-    voiceHudTimer=setTimeout(function(){if(voiceHudTxt)voiceHudTxt.textContent=tr('Dinleniyor…');if(voiceHud)voiceHud.style.borderColor='rgba(255,255,255,.09)';},2600);
-  }
-  // ---- Ses tanıma: BEYAZ EKRAN GÜVENLİ mimari ----
-  // Kritik: WebView2'de her döngüde `new SpeechRecognition()` oluşturmak nesne/
-  // ses-kaynağı çöplüğü yaratıp renderer'ı çökertiyor (beyaz ekran). Bu yüzden:
-  //   1) TEK bir tanıma nesnesi oluşturulur ve tekrar tekrar YENİDEN KULLANILIR.
-  //   2) Yeniden başlatmalar KATI hız sınırına tabidir (dakikada üst sınır + mola).
-  //   3) Devre kesici yalnızca gerçek servis hatalarında devreye girer.
-  var voiceStartLog=[];
-  function voiceReleaseRec(){if(voiceRec){try{voiceRec.onstart=null;voiceRec.onend=null;voiceRec.onerror=null;voiceRec.onresult=null;voiceRec.abort?voiceRec.abort():voiceRec.stop();}catch(e){}voiceRec=null;}}
-  function stopVoice(){
-    voiceActive=false;voiceStarting=false;
-    if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}
-    if(voiceWatchdog){clearInterval(voiceWatchdog);voiceWatchdog=null;}
-    voiceReleaseRec();
-    if(voiceHud)voiceHud.style.display='none';
-  }
-  function voiceGiveUp(msg){voiceActive=false;voiceStarting=false;voiceGaveUp=true;if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}if(voiceWatchdog){clearInterval(voiceWatchdog);voiceWatchdog=null;}voiceReleaseRec();voiceHudState('error');voiceHudFlash(msg||'Ses tanıma kapatıldı','warn');updateVoiceStatus();}
-  function scheduleVoiceRestart(){
-    if(!voiceActive||voiceStarting||voiceRestartTimer)return;
-    // Sağlıklıyken bile en az ~1.5 sn bekle (churn'ü engeller). Sert hatada geri çekil.
-    var delay=voiceFails>0?Math.min(1600*Math.pow(2,Math.min(voiceFails,4)),20000):1500;
-    voiceRestartTimer=setTimeout(function(){voiceRestartTimer=null;startVoice();},delay);
-  }
-  // Handler'lar TEK sefer bağlanır; nesne yeniden kullanıldığı için tekrar kurulmaz.
-  function configureRec(r){
-    r.lang=get('voiceLang',lang==='en'?'en-US':'tr-TR');r.continuous=true;r.interimResults=true;r.maxAlternatives=3;
-    r.onstart=function(){voiceStarting=false;voiceStartedAt=Date.now();voiceAlive=Date.now();voiceHudState('listen');updateVoiceStatus();};
-    r.onresult=function(e){
-      voiceFails=0;voiceHardErr=false;voiceAlive=Date.now();
-      for(var i=e.resultIndex;i<e.results.length;i++){
-        var res=e.results[i],acted=false;
-        for(var a=0;a<res.length;a++){var t=normVoice(res[a].transcript);if(!t)continue;if(actVoice(t)){acted=true;break;}}
-        if(!acted&&res.isFinal){var ft=normVoice(res[0].transcript);if(ft&&ft.length>1)voiceHudFlash('duydum: '+ft,'heard');}
-      }
-    };
-    r.onerror=function(e){
-      var err=e&&e.error;
-      if(err==='not-allowed'){voiceGiveUp('Mikrofon izni yok — ses komutu kapatıldı');say('Ses komutu için Windows/site mikrofon izni gerekli.',C.warn);return;}
-      // no-speech/aborted zararsız (sessizlik). Yalnızca gerçek servis hataları sayılır.
-      if(err&&err!=='no-speech'&&err!=='aborted')voiceHardErr=true;
-      voiceHudState('idle');
-    };
-    r.onend=function(){
-      voiceStarting=false;voiceHudState('idle');updateVoiceStatus();
-      if(!voiceActive)return;
-      if(voiceHardErr)voiceFails++;else voiceFails=0;
-      voiceHardErr=false;
-      if(voiceFails>=8){voiceGiveUp('Ses tanıma servisi yanıt vermiyor — kapatıldı. Ayarlardan “Yeniden başlat” ile deneyebilirsin.');return;}
-      scheduleVoiceRestart();
-    };
-    return r;
-  }
-  function ensureRec(){
-    if(voiceRec)return voiceRec;
-    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR)return null;
-    voiceRec=configureRec(new SR());
-    return voiceRec;
-  }
-  // Global hız sınırı: son 60 sn'de 45'ten fazla başlatma = anormal churn → uzun mola.
-  function voiceRateOk(){var now=Date.now();while(voiceStartLog.length&&now-voiceStartLog[0]>60000)voiceStartLog.shift();return voiceStartLog.length<45;}
-  function startVoice(){
-    if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){voiceGiveUp('Ses tanıma bu ortamda yok');return false;}
-    if(voiceStarting)return false;            // tek-uçuş
-    if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}
-    if(!voiceRateOk()){ // churn koruması: kısa mola ver, sonra devam
-      voiceStarting=false;voiceHudState('idle');
-      voiceRestartTimer=setTimeout(function(){voiceRestartTimer=null;voiceStartLog=[];startVoice();},20000);
-      return false;
-    }
-    voiceStarting=true;voiceActive=true;voiceGaveUp=false;ensureVoiceHud();voiceHudState('listen');voiceAlive=Date.now();voiceStartedAt=Date.now();updateVoiceStatus();
-    var r=ensureRec();
-    if(!r){voiceGiveUp('Ses tanıma bu ortamda yok');return false;}
-    voiceStartLog.push(Date.now());
-    try{
-      r.start();
-      if(!voiceWatchdog)voiceWatchdog=setInterval(function(){
-        if(voiceActive&&!voiceStarting&&!voiceRestartTimer&&(!voiceRec||Date.now()-voiceAlive>30000)){scheduleVoiceRestart();}
-      },10000);
-      return true;
-    }catch(e){
-      voiceStarting=false;
-      var m=(e&&(e.name||e.message||''))+'';
-      // "already started": nesne zaten dinliyor → hata değil, olduğu gibi bırak.
-      if(/InvalidState|already started|already running/i.test(m)){voiceAlive=Date.now();return true;}
-      // Gerçek başlatma hatası → nesneyi tazele ve geri çekil.
-      voiceReleaseRec();voiceFails++;
-      if(voiceFails>=8){voiceGiveUp('Ses tanıma başlatılamıyor — kapatıldı');return false;}
-      scheduleVoiceRestart();
-      return false;
-    }
-  }
-  // Ses komutunu manuel (yeniden) başlat: devre kesiciyi sıfırlar.
-  function restartVoice(){voiceGaveUp=false;voiceFails=0;voiceHardErr=false;voiceStartLog=[];voiceReleaseRec();if(voiceRestartTimer){clearTimeout(voiceRestartTimer);voiceRestartTimer=null;}startVoice();}
-  function voiceStatusText(){
-    if(!ison('voiceMute','0'))return 'Kapalı';
-    if(voiceGaveUp)return 'Durdu (yeniden başlat gerekiyor)';
-    if(voiceRec&&!voiceStarting)return 'Dinleniyor';
-    return 'Başlatılıyor…';
-  }
-  function updateVoiceStatus(){if(voiceStatusEl){var s=voiceStatusText();voiceStatusEl.textContent=tr(s);voiceStatusEl.style.color=(s.indexOf('Durdu')>=0)?C.warn:(s==='Dinleniyor'?'#fff':C.mut);voiceStatusEl.style.background=(s==='Dinleniyor')?C.grn:C.field;voiceStatusEl.style.borderColor=(s==='Dinleniyor')?C.grn:C.line;}}
   // Kendine ait, tasarımlı "Sesli komutlar" kartı: tetik kelimelerini belirlersin.
   var MIC_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
   function buildVoiceCard(){
-    var card=mk('div',{background:'linear-gradient(180deg,rgba(88,101,242,.07),rgba(0,0,0,0))',border:'1px solid '+C.line,borderRadius:'14px',padding:'15px 16px',margin:'8px 0 6px'});
+    var card=mk('div',{background:'transparent',border:'1px solid '+C.line,borderRadius:'6px',padding:'18px',margin:'8px 0 6px'});
     var hd=mk('div',{display:'flex',alignItems:'center',gap:'11px',marginBottom:'13px'});
     var ic=mk('div',{width:'36px',height:'36px',borderRadius:'11px',background:C.acc,display:'flex',alignItems:'center',justifyContent:'center',flex:'0 0 auto',boxShadow:'0 4px 12px rgba(88,101,242,.4)'});ic.innerHTML=MIC_SVG;
     var htx=mk('div',{flex:'1',minWidth:'0'});
@@ -1008,20 +903,30 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
         var c=mk('div',{fontSize:'12px',fontWeight:'600',color:C.mut,background:'transparent',border:'1px solid '+C.line,borderRadius:'16px',padding:'5px 12px',cursor:'pointer',transition:'all .12s'},p);
         c.onmouseenter=function(){c.style.borderColor=cfg.dot;c.style.color=C.hl;};
         c.onmouseleave=function(){c.style.borderColor=C.line;c.style.color=C.mut;};
-        c.onclick=function(){inp.value=p;set(cfg.key,p);say(cfg.title+' komutu ayarlandı: “'+p+'”');};
+        c.onclick=function(){inp.value=p;say('Komutu uygulamak için Kaydet’e bas.');};
         chips.appendChild(c);
       });
       wrap.appendChild(chips);return wrap;
     }
-    var EN_L=lang==='en';
+    var EN_L=voiceConfig().language==='en';
     card.appendChild(cmdRow({title:'Sustur',hint:'· duyunca mikrofonu kapatır',dot:'#f23f42',glow:'rgba(242,63,66,.18)',key:'voiceMutePhrase',def:EN_L?'mute':'mikrofonu kapat',presets:EN_L?['mute','mute me','stop','silence']:['mikrofonu kapat','sustur','sessiz ol','beni sustur'],assign:function(i){voiceMuteInp=i;}}));
-    card.appendChild(cmdRow({title:'Aç',hint:'· duyunca mikrofonu açar',dot:'#23a55a',glow:'rgba(35,165,90,.18)',key:'voiceUnmutePhrase',def:EN_L?'unmute':'mikrofonu aç',top:'14px',presets:EN_L?['unmute','open mic','let me talk','back on']:['mikrofonu aç','sesimi aç','geri aç','konuşacağım'],assign:function(i){voiceUnmuteInp=i;}}));
+    card.appendChild(cmdRow({title:'Aç',hint:'· duyunca mikrofonu açar',dot:'#23a55a',glow:'rgba(35,165,90,.18)',key:'voiceUnmutePhrase',def:EN_L?'open mic':'mikrofonu aç',top:'14px',presets:EN_L?['unmute','open mic','let me talk','back on']:['mikrofonu aç','sesimi aç','geri aç','konuşacağım'],assign:function(i){voiceUnmuteInp=i;}}));
+    var roomCommands=mk('dl',{});roomCommands.className='ldc-room-commands';
+    [[EN_L?'Leave room':'Odadan çık',EN_L?'leave voice / leave voice channel':'odadan çık / ses kanalından çık'],[EN_L?'Deafen audio':'Kulaklığı kapat',EN_L?'deafen audio / mute all audio':'sesi tamamen kapat'],[EN_L?'Restore audio':'Kulaklığı aç',EN_L?'restore audio / undeafen audio':'sesi geri aç']].forEach(function(row){roomCommands.appendChild(mk('dt',{},row[0]));roomCommands.appendChild(mk('dd',{},row[1]));});card.appendChild(roomCommands);
     var act=mk('div',{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'15px'});
-    var save=mkBtn('Kaydet',true);save.onclick=function(){set('voiceMutePhrase',(voiceMuteInp.value||'').trim()||(EN_L?'mute':'mikrofonu kapat'));set('voiceUnmutePhrase',(voiceUnmuteInp.value||'').trim()||(EN_L?'unmute':'mikrofonu aç'));say('Sesli komutlar kaydedildi.');};
-    var vrestart=mkBtn('Yeniden başlat',false);vrestart.onclick=function(){set('voiceMute','1');if(switches['voiceMute'])switches['voiceMute'].set(true);restartVoice();say('Ses tanıma yeniden başlatıldı — dinleniyor.');};
-    var vtest=mkBtn('Mikrofonu test et',false);vtest.onclick=function(){var b=micButton();if(!b){say('Discord’un mikrofon düğmesi bulunamadı — bir ses kanalındayken dene.',C.warn);return;}var s=micState();var lbl=(b.getAttribute('aria-label')||b.getAttribute('title')||b.textContent||'').trim().slice(0,40);say('Buton: “'+lbl+'” · durum: '+(s==='live'?'açık':(s==='muted'?'kapalı':'bilinmiyor'))+'. Sorun sürerse bu yazıyı bana ilet.');};
-    act.appendChild(save);act.appendChild(vrestart);act.appendChild(vtest);card.appendChild(act);
-    card.appendChild(mk('div',{fontSize:'11px',color:C.mut,marginTop:'11px',lineHeight:'1.5'},'İpucu: bu kelimelerin doğal varyasyonlarını da anlar (ör. “mikrofonu kapatır mısın”). Cümlenin içinde geçmesi yeter.'));
+    var save=mkBtn('Kaydet',true);save.onclick=function(){var m=(voiceMuteInp.value||'').trim(),u=(voiceUnmuteInp.value||'').trim();if(!m||!u||normVoice(m)===normVoice(u)||m.length>100||u.length>100){say('Aç ve kapat komutları farklı ve en fazla 100 karakter olmalı.',C.warn);return;}set('voiceMutePhrase',m);set('voiceUnmutePhrase',u);if(ison('voiceMute','0'))restartVoice();say('Sesli komutlar kaydedildi.');};
+    var vrestart=mkBtn('Yeniden başlat',false);vrestart.onclick=function(){set('voiceMute','1');if(switches['voiceMute'])switches['voiceMute'].set(true);restartVoice();say('Yerel ses komutu başlatılıyor…');};
+    var vinstall=mkBtn('Ses dosyalarını denetle',false);vinstall.onclick=function(){nativeCmd('sync');say('Ses dosyaları denetleniyor…');};
+    var vtest=mkBtn('Mikrofon düğmesini denetle',false);vtest.onclick=function(){var b=micButton();if(!b){say('Discord’un mikrofon düğmesi bulunamadı — bir ses kanalındayken dene.',C.warn);return;}var s=micState();var lbl=(b.getAttribute('aria-label')||b.getAttribute('title')||b.textContent||'').trim().slice(0,40);say('Buton: “'+lbl+'” · durum: '+(s==='live'?'açık':(s==='muted'?'kapalı':'bilinmiyor'))+'. Sorun sürerse bu yazıyı bana ilet.');};
+    var permissionsReset=mkBtn('Discord aygıt izinlerini sıfırla',false);permissionsReset.onclick=function(){nativeCmd('reset_device_permissions');say('Discord aygıt izinleri sıfırlanıyor…');};
+    act.appendChild(save);act.appendChild(vrestart);act.appendChild(vtest);act.appendChild(vinstall);act.appendChild(permissionsReset);card.appendChild(act);
+    var vl=mk('select',{marginTop:'12px',padding:'8px',background:C.field,color:C.fg,border:'1px solid '+C.line,borderRadius:'8px'});vl.setAttribute('aria-label',tr('Komut dili'));
+    [['tr','Türkçe'],['en','English']].forEach(function(o){var el=mk('option',{},o[1]);el.value=o[0];vl.appendChild(el);});vl.value=voiceConfig().language;
+    vl.onchange=function(){set('voiceLanguage',vl.value);set('voiceMutePhrase',vl.value==='en'?'mute':'mikrofonu kapat');set('voiceUnmutePhrase',vl.value==='en'?'open mic':'mikrofonu aç');voiceMuteInp.value=voiceConfig().mute;voiceUnmuteInp.value=voiceConfig().unmute;if(ison('voiceMute','0'))restartVoice();};card.appendChild(vl);
+    card.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginTop:'11px',lineHeight:'1.6'},'Yerel ve çevrimdışı. Ses kaydedilmez veya gönderilmez. Sessizlikte yalnızca ses etkinliği kontrol edilir. Komutu tek başına söyle; uzun konuşmalar işlenmez.'));
+    var packNote=mk('div',{fontSize:'12px',color:C.mut,marginTop:'8px',lineHeight:'1.5'},'Türkçe ve İngilizce ses motoru kurulumla birlikte gelir.');packNote.id='ldc-voice-pack-status';packNote.setAttribute('role','status');card.appendChild(packNote);
+    var detail=mk('div',{fontSize:'12px',color:C.mut,marginTop:'10px',lineHeight:'1.6'});detail.id='ldc-voice-detail';detail.setAttribute('role','status');detail.hidden=true;card.appendChild(detail);
+    card.appendChild(mk('div',{fontSize:'11px',color:C.mut,marginTop:'6px',lineHeight:'1.5'},'Ses komutlarını açtığında seçili model belleğe yüklenir; kapattığında mikrofon ve model serbest bırakılır.'));
     return card;
   }
 
@@ -1032,18 +937,16 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     {k:'upsell',def:'0',t:'Nitro & reklamları gizle',d:'Yükseltme/hediye (upsell) öğelerini arayüzden gizler.'},
     {k:'noTyping',def:'0',t:'Yazma göstergesini gizle',d:'Karşı taraf sen yazarken "yazıyor..." görmez.'},
     {k:'mdPreview',def:'0',t:'Markdown önizleme',d:'Mesaj yazarken sağ altta canlı önizleme gösterir.'},
-    {k:'ssControls',def:'1',t:'Ekran paylaşımı kontrolleri',d:'Paylaşım yaparken üstte durdurma & filigran çubuğu gösterir.'},
-    {k:'ssWatermark',def:'0',t:'Paylaşıma filigran ekle',d:'Ekran paylaşımına yarı saydam idgafcord filigranı ekler.'}
   ];
-  var THEME_OPTS=[{v:'off',l:'Kapalı'},{v:'idgaf',l:'idgaf'},{v:'midnight',l:'Midnight'},{v:'space',l:'Uzay'},{v:'dracula',l:'Dracula'},{v:'nord',l:'Nord'},{v:'catppuccin',l:'Catppuccin'},{v:'amoled',l:'AMOLED'},{v:'tokyonight',l:'Tokyo Night'},{v:'gruvbox',l:'Gruvbox'},{v:'solarized',l:'Solarized'},{v:'rosepine',l:'Rosé Pine'},{v:'synthwave',l:'Synthwave'},{v:'monokai',l:'Monokai'}];
+  var THEME_OPTS=[{v:'off',l:'Kapalı'},{v:'aero',l:'Frutiger Aero'},{v:'aeroDark',l:'Dark Frutiger Aero'},{v:'idgaf',l:'idgaf'},{v:'midnight',l:'Midnight'},{v:'space',l:'Uzay'},{v:'dracula',l:'Dracula'},{v:'nord',l:'Nord'},{v:'catppuccin',l:'Catppuccin'},{v:'amoled',l:'AMOLED'},{v:'tokyonight',l:'Tokyo Night'},{v:'gruvbox',l:'Gruvbox'},{v:'solarized',l:'Solarized'},{v:'rosepine',l:'Rosé Pine'},{v:'synthwave',l:'Synthwave'},{v:'monokai',l:'Monokai'}];
   var PROFILE_OPTS=[{v:'normal',l:'Normal'},{v:'save',l:'Tasarruf'},{v:'stream',l:'Yayın'},{v:'game',l:'Oyun'}];
   var RADIUS_OPTS=[{v:'normal',l:'Normal'},{v:'soft',l:'Yumuşak'},{v:'sharp',l:'Köşeli'}];
-  var C={bg:'#1e1f22',fg:'#dbdee1',hl:'#f2f3f5',mut:'#949ba4',acc:'#5865F2',accH:'#4752c4',grn:'#23a55a',line:'#2b2d31',line2:'#3a3c41',field:'#2b2d31',btn:'#4e5058',btnH:'#6d6f78',warn:'#f0b232',red:'#f23f42',glass:'rgba(30,31,34,.82)',glass2:'rgba(43,45,49,.55)'};
+  var C={bg:'var(--ldc-ui-bg,#1e1f22)',fg:'var(--ldc-ui-fg,#dbdee1)',hl:'var(--ldc-ui-hl,#f2f3f5)',mut:'var(--ldc-ui-muted,#949ba4)',acc:'var(--ldc-ui-accent,#0c84af)',accH:'var(--ldc-ui-accent-hover,#086a90)',grn:'#23a55a',line:'var(--ldc-ui-line,#2b2d31)',line2:'var(--ldc-ui-line2,#3a3c41)',field:'var(--ldc-ui-field,#2b2d31)',btn:'var(--ldc-ui-button,#4e5058)',btnH:'var(--ldc-ui-button-hover,#6d6f78)',warn:'#f0b232',red:'#f23f42',glass:'var(--ldc-ui-glass,rgba(30,31,34,.82))',glass2:'var(--ldc-ui-glass2,rgba(43,45,49,.55))'};
   function st(el,o){for(var k in o){el.style[k]=o[k];}return el;}
-  function mk(tag,o,txt){var e=document.createElement(tag);if(o)st(e,o);if(txt!=null)e.textContent=txt;return e;}
+  function mk(tag,o,txt){var e=document.createElement(tag);if(tag==='button')e.type='button';if(o)st(e,o);if(txt!=null)e.textContent=txt;if(o&&typeof C!=='undefined'&&C){if(o.color===C.mut||o.color==='#b5bac1')e.setAttribute('data-ldc-muted','');else if(o.color===C.fg||o.color===C.hl)e.setAttribute('data-ldc-text','');}return e;}
   function hover(el,a,b){el.addEventListener('mouseenter',function(){el.style.background=b;});el.addEventListener('mouseleave',function(){el.style.background=a;});}
-  var statusEl,themeEl,modal,footEl,switches={},nativeSwitches={},themePills,profilePills,accentInp,fontRange,fontVal,bgInp,termEl,termSumEl,termTimer=null,radiusPills,logoInp,fontInp,muteShortcutText,updateStatusEl,voiceMuteInp,voiceUnmuteInp,tabButtons={},activeTab='system',micBadge=null;
-  var nativeState={minimize_to_tray:true,start_minimized:false,autostart:false,disable_gpu:false,stream_performance:false,game_mode:false,auto_update_check:true,mute_shortcut:'CommandOrControl+Shift+M'};
+  var statusEl,themeEl,modal,footEl,switches={},nativeSwitches={},themePills,profilePills,accentInp,fontRange,fontVal,bgInp,termEl,termSumEl,termTimer=null,radiusPills,logoInp,fontInp,muteShortcutText,updateStatusEl,voiceMuteInp,voiceUnmuteInp,tabButtons={},activeTab='system',micBadge=null,panelAbort=null,lastPanelFocus=null;
+  var nativeState={ecosystem_url:'',ecosystem_enabled:false,minimize_to_tray:true,start_minimized:false,autostart:false,disable_gpu:false,stream_performance:false,game_mode:false,auto_update_check:true,mute_shortcut:'CommandOrControl+Shift+M'};
   function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':'&gt;';});}
   function fmtTime(t){var d=new Date(t),p=function(n){return(n<10?'0':'')+n;};return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
   function shortUrl(u){return String(u).replace(/^[^/]*\//,'/').split('?')[0].slice(0,52);}
@@ -1060,7 +963,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     // Segment kontrolü: iç arka planlı kapsül; seçili öğe aksan dolgulu.
     var wrap=mk('div',{display:'inline-flex',flexWrap:'wrap',gap:'4px',marginTop:'2px',padding:'4px',background:C.field,border:'1px solid '+C.line,borderRadius:'11px'});var btns={};
     opts.forEach(function(o){
-      var b=mk('div',{padding:'7px 14px',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',background:'transparent',color:C.mut,transition:'background .13s,color .13s,box-shadow .13s'},o.l);
+      var b=mk('button',{border:'none',fontFamily:'inherit',padding:'7px 14px',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',background:'transparent',color:C.mut,transition:'background .13s,color .13s,box-shadow .13s'},o.l);
       b.onclick=function(){wrap._v=o.v;render();cb(o.v);};
       b.onmouseenter=function(){if(wrap._v!==o.v)b.style.color=C.hl;};
       b.onmouseleave=function(){if(wrap._v!==o.v)b.style.color=C.mut;};
@@ -1071,6 +974,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   }
   // Tema önizleme renkleri: [derin zemin, yüzey, aksan] — kart swatch'ında kullanılır.
   var THEME_SW={
+    aero:['#89d8ef','#edfaff','#0078a8'],aeroDark:['#061321','#0b2032','#68bfd5'],
     off:['#2b2d31','#3a3c41','#5865f2'],idgaf:['#120000','#340707','#d80f12'],
     midnight:['#09090c','#1c1c20','#5865f2'],space:['#070912','#181d38','#7c5cff'],
     dracula:['#21222c','#3c4055','#bd93f9'],nord:['#2e3440','#434c5e','#88c0d0'],
@@ -1084,7 +988,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     var cards={};
     THEME_OPTS.forEach(function(o){
       var sw=THEME_SW[o.v]||['#2b2d31','#3a3c41','#5865f2'];
-      var card=mk('div',{position:'relative',cursor:'pointer',borderRadius:'11px',overflow:'hidden',border:'2px solid transparent',background:C.field,transition:'border-color .14s,transform .14s,box-shadow .14s'});
+      var card=mk('button',{fontFamily:'inherit',textAlign:'left',padding:'0',position:'relative',cursor:'pointer',borderRadius:'8px',overflow:'hidden',border:'2px solid transparent',background:C.field,transition:'border-color .14s,transform .14s,box-shadow .14s'});
       var prev=mk('div',{position:'relative',height:'48px',background:sw[0]});
       prev.appendChild(mk('div',{position:'absolute',top:'9px',left:'9px',width:'15px',height:'15px',borderRadius:'50%',background:sw[2],boxShadow:'0 0 0 2px rgba(0,0,0,.3)'}));
       prev.appendChild(mk('div',{position:'absolute',left:'9px',right:'22px',bottom:'9px',height:'7px',borderRadius:'4px',background:sw[1]}));
@@ -1098,20 +1002,21 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
       cards[o.v]={card:card,check:check};grid.appendChild(card);
     });
     grid._v=cur;
-    function render(){for(var k in cards){var on=k===grid._v;cards[k].card.style.borderColor=on?C.acc:'transparent';cards[k].card.style.transform=on?'translateY(-1px)':'none';cards[k].card.style.boxShadow=on?'0 6px 16px rgba(0,0,0,.32)':'none';cards[k].check.style.display=on?'flex':'none';}}
+    function render(){for(var k in cards){var on=k===grid._v;cards[k].card.setAttribute('aria-pressed',String(on));cards[k].card.style.borderColor=on?C.acc:'transparent';cards[k].card.style.transform=on?'translateY(-1px)':'none';cards[k].card.style.boxShadow=on?'0 6px 16px rgba(0,0,0,.32)':'none';cards[k].check.style.display=on?'flex':'none';}}
     grid.set=function(v){grid._v=v;render();};render();return grid;
   }
   function mkRow(title,desc,ctrl){
     var row=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var txt=mk('div',{flex:'1'});txt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},title));
     if(desc)txt.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',marginTop:'3px',lineHeight:'1.35'},desc));
-    row.appendChild(txt);row.appendChild(ctrl);return row;
+    if(ctrl&&ctrl.getAttribute('role')==='switch')ctrl.setAttribute('aria-label',tr(title));row.appendChild(txt);row.appendChild(ctrl);return row;
   }
-  function say(m,c){if(statusEl){statusEl.textContent=tr(m)||'';statusEl.style.color=c||C.grn;}}
+  function say(m,c){if(statusEl){statusEl.textContent=tr(m)||'';statusEl.title=tr(m)||'';statusEl.style.color=c||C.grn;}}
   function sec(t){var e=mk('div',{fontSize:'11px',textTransform:'uppercase',letterSpacing:'.6px',color:C.mut,fontWeight:'700',margin:'18px 0 4px'},t);e._sec=t;return e;}
   function mkBtn(l,p){var b=mk('button',{background:p?C.acc:C.btn,color:'#fff',border:'none',borderRadius:'6px',padding:'9px 15px',fontSize:'13px',cursor:'pointer',fontWeight:'500',fontFamily:'inherit',whiteSpace:'nowrap',flex:'0 0 auto'},l);hover(b,p?C.acc:C.btn,p?C.accH:C.btnH);return b;}
   function profileFromNative(){if(nativeState.game_mode)return 'game';if(nativeState.stream_performance)return 'stream';if(nativeState.disable_gpu)return 'save';return 'normal';}
   var TAB_ICONS={
+    card:'<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M5 17v-2h6v2M14 9h5M14 13h5"/></svg>',
     system:'<svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
     voice:'<svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
     privacy:'<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
@@ -1122,14 +1027,14 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     markdown:'<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>'
   };
   function mkTabs(body){
-    var opts=[{v:'system',l:'Sistem'},{v:'voice',l:'Ses'},{v:'privacy',l:'Gizlilik'},{v:'theme',l:'Tema'},{v:'look',l:'Görünüm'},{v:'markdown',l:'Markdown'},{v:'plugins',l:'Eklentiler'},{v:'advanced',l:'Gelişmiş'}];
-    var bar=mk('div',{display:'flex',gap:'4px',padding:'12px 16px 14px',borderBottom:'1px solid '+C.line,overflowX:'auto',background:'linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0))'});
-    bar.className='ldc-tabbar';
-    opts.forEach(function(o){
-      var b=mk('button',{display:'flex',alignItems:'center',gap:'7px',background:'transparent',color:C.mut,border:'1px solid transparent',borderRadius:'10px',padding:'8px 13px',fontSize:'13px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap',fontFamily:'inherit',transition:'background .14s,color .14s,box-shadow .14s,transform .14s',flex:'0 0 auto'});
+    var opts=[{v:'system',l:'Sistem'},{v:'voice',l:'Ses'},{v:'privacy',l:'Gizlilik'},{v:'theme',l:'Tema'},{v:'look',l:'Görünüm'},{v:'card',l:'Kartım'},{v:'markdown',l:'Markdown'},{v:'plugins',l:'Eklentiler'},{v:'advanced',l:'Gelişmiş'}];
+    var bar=mk('div',{display:'flex'});
+    bar.className='ldc-tabbar ldc-settings-nav';bar.setAttribute('aria-orientation','vertical');bar.setAttribute('role','tablist');bar.setAttribute('aria-label',tr('Ayarlar'));
+    opts.forEach(function(o,index){
+      var b=mk('button',{display:'flex',alignItems:'center',gap:'9px',background:'transparent',color:C.mut,border:'1px solid transparent',borderRadius:'10px',padding:'8px 13px',fontSize:'13px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap',fontFamily:'inherit',transition:'background .14s,color .14s,box-shadow .14s,transform .14s',flex:'0 0 auto'});
       b.innerHTML='<span class="ldc-tab-ic" style="display:inline-flex;width:15px;height:15px">'+(TAB_ICONS[o.v]||'')+'</span><span>'+o.l+'</span>';
       var svg=b.querySelector('svg');if(svg){svg.setAttribute('width','15');svg.setAttribute('height','15');svg.style.fill='none';svg.style.stroke='currentColor';svg.style.strokeWidth='2';svg.style.strokeLinecap='round';svg.style.strokeLinejoin='round';}
-      b.onclick=function(){activeTab=o.v;applyTabs(body);};
+      b.type='button';b.id='ldc-tab-'+o.v;b.setAttribute('role','tab');b.setAttribute('aria-controls','ldc-modal-body');b.onclick=function(){activeTab=o.v;applyTabs(body,true);};b.onkeydown=function(e){var n=e.key==='ArrowDown'?(index+1)%opts.length:e.key==='ArrowUp'?(index+opts.length-1)%opts.length:e.key==='Home'?0:e.key==='End'?opts.length-1:-1;if(n>=0){e.preventDefault();var next=tabButtons[opts[n].v];next.click();next.focus();}};
       b.onmouseenter=function(){if(activeTab!==o.v){b.style.background=C.field;b.style.color=C.hl;}};
       b.onmouseleave=function(){if(activeTab!==o.v){b.style.background='transparent';b.style.color=C.mut;}};
       tabButtons[o.v]=b;bar.appendChild(b);
@@ -1138,6 +1043,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
   }
   function tabForSection(t){
     if(/Sistem|Güncelleme/.test(t))return 'system';
+    if(t==='Kullanıcı kartım')return 'card';
     if(/Ses|Mikrofon/.test(t))return 'voice';
     if(/Engellenen|Gizlilik|Genel/.test(t))return 'privacy';
     if(/Özel tema/.test(t))return 'advanced';
@@ -1147,30 +1053,31 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(/Markdown|Önizleme/.test(t))return 'markdown';
     return activeTab;
   }
-  function applyTabs(body){
+  function applyTabs(body,resetScroll){
     var cur='system',kids=Array.prototype.slice.call(body.children);
-    kids.forEach(function(ch){if(ch._sec)cur=tabForSection(ch._sec);ch._tab=cur;ch.style.display=(cur===activeTab)?'':'none';});
+    kids.forEach(function(ch){if(ch._sec)cur=tabForSection(ch._sec);ch._tab=cur;if(ch._ldcDisplay===undefined)ch._ldcDisplay=ch.style.display;ch.style.display=(cur===activeTab)?ch._ldcDisplay:'none';});
     for(var k in tabButtons){var on=k===activeTab,b=tabButtons[k];
-      b.style.background=on?C.acc:'transparent';
+      b.tabIndex=on?0:-1;b.setAttribute('aria-selected',String(on));b.style.background=on?C.acc:'transparent';
       b.style.color=on?'#fff':C.mut;
-      b.style.boxShadow=on?'0 4px 13px rgba(88,101,242,.42)':'none';
-      b.style.transform=on?'translateY(-1px)':'none';
+      b.style.boxShadow='none';
+      b.style.transform='none';
     }
     // Seçili sekmenin ilk satırını görünür kılmak için gövdeyi başa sar.
-    var mb=document.getElementById('ldc-modal-body');if(mb)mb.scrollTop=0;
+    var mb=document.getElementById('ldc-modal-body');if(mb){mb.setAttribute('aria-labelledby','ldc-tab-'+activeTab);if(resetScroll)mb.scrollTop=0;}
   }
   // Bilgisayardan görsel seç → data: URL (CSP'ye takılmaz, localStorage'da saklanır).
   function pickFile(maxLen,cb){var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.style.display='none';inp.onchange=function(){var f=inp.files&&inp.files[0];if(!f)return;var r=new FileReader();r.onload=function(){var d=r.result;if(String(d).length>maxLen){cb(null);return;}cb(d);};r.readAsDataURL(f);};(document.body||document.documentElement).appendChild(inp);inp.click();setTimeout(function(){if(inp.parentNode)inp.parentNode.removeChild(inp);},1500);}
   function mkSwitch(on,cb){
     var w=mk('div',{position:'relative',width:'40px',height:'24px',flex:'0 0 auto',cursor:'pointer'});
+    w.setAttribute('role','switch');w.tabIndex=0;w.setAttribute('aria-checked',String(on));w.onkeydown=function(e){if(e.key===' '||e.key==='Enter'){e.preventDefault();w.click();}};
     var tr=mk('div',{position:'absolute',top:'0',left:'0',right:'0',bottom:'0',borderRadius:'24px',transition:'.18s',background:on?C.grn:'#80848e'});
     var kn=mk('div',{position:'absolute',top:'3px',left:'3px',width:'18px',height:'18px',borderRadius:'50%',background:'#fff',transition:'.18s',transform:on?'translateX(16px)':'translateX(0)'});
     w.appendChild(tr);w.appendChild(kn);w._c=on;
-    function r(){tr.style.background=w._c?C.grn:'#80848e';kn.style.transform=w._c?'translateX(16px)':'translateX(0)';}
+    function r(){w.setAttribute('aria-checked',String(w._c));tr.style.background=w._c?C.grn:'#80848e';kn.style.transform=w._c?'translateX(16px)':'translateX(0)';}
     w.onclick=function(){w._c=!w._c;r();cb(w._c);};w.set=function(v){w._c=!!v;r();};return w;
   }
   function onToggle(k,v){set(k,v?'1':'0');applyAll();say('Kaydedildi.');}
-  function onVoiceToggle(v){set('voiceMute',v?'1':'0');if(v){voiceGaveUp=false;voiceFails=0;voiceHardErr=false;voiceStartLog=[];startVoice();say('Ses komutu açıldı — dinleniyor.');}else{stopVoice();say('Ses komutu kapatıldı.');}updateVoiceStatus();}
+  function onVoiceToggle(v){set('voiceMute',v?'1':'0');if(v){restartVoice();say('Yerel ses komutu başlatılıyor…');}else{stopVoice();say('Ses komutu kapatıldı.');}updateVoiceStatus();}
   function nativeCmd(action,key,value){
     var u='idgafcord://native?action='+encodeURIComponent(action||'');
     if(key)u+='&key='+encodeURIComponent(key);
@@ -1182,7 +1089,7 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     nativeSwitches[key]=sw;
     return mkRow(title,desc,sw);
   }
-  function shortcutLabel(s){return String(s||'CommandOrControl+Shift+M').replace('CommandOrControl','Ctrl/Cmd').replace(/\+/g,' + ');}
+  function shortcutLabel(s){return String(s||'CommandOrControl+Shift+M').replace('CommandOrControl','Ctrl').replace(/\+/g,' + ');}
   function updateShortcutText(){if(muteShortcutText)muteShortcutText.textContent=shortcutLabel(nativeState.mute_shortcut);}
   function eventShortcut(e){
     var key='';
@@ -1222,16 +1129,22 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     setTimeout(function(){document.addEventListener('keydown',done,true);},30);
   }
   window.__LDC_setNativeSettings=function(s){
+    var oldEcosystem=(nativeState.ecosystem_url||'')+'|'+!!nativeState.ecosystem_enabled;
     nativeState=s||nativeState;
+    if(oldEcosystem!==(nativeState.ecosystem_url||'')+'|'+!!nativeState.ecosystem_enabled){ecosystemPending.clear();ecosystemCache.clear();document.querySelectorAll('[data-ldc-ecosystem-user]').forEach(function(host){host.removeAttribute('data-ldc-ecosystem-user');});document.querySelectorAll('.ldc-ecosystem-profile').forEach(function(card){card.remove();});}
+    scanEcosystem();
+    var ecosystemAddress=document.getElementById('ldc-ecosystem-url'),ecosystemEnabled=document.getElementById('ldc-ecosystem-enabled');if(ecosystemAddress&&document.activeElement!==ecosystemAddress)ecosystemAddress.value=nativeState.ecosystem_url||'';if(ecosystemEnabled)ecosystemEnabled.checked=!!nativeState.ecosystem_enabled;
     for(var k in nativeSwitches){if(k in nativeState)nativeSwitches[k].set(!!nativeState[k]);}
     if(profilePills)profilePills.set(profileFromNative());
     updateShortcutText();
+    var pack=document.getElementById('ldc-voice-pack-status');if(pack){var ready=nativeState.voice_tr_ready&&nativeState.voice_en_ready;pack.textContent=tr(ready?'Türkçe ve İngilizce yerel ses motoru hazır.':'Ses dosyaları eksik. Güncel kurulumla uygulamayı onar.');pack.dataset.ready=String(!!ready);}
   };
   window.__LDC_nativeNotice=function(msg,warn){say(msg,warn?C.warn:C.grn);};
   window.__LDC_updateStatus=function(msg,warn){if(updateStatusEl){updateStatusEl.textContent=msg||'';updateStatusEl.style.color=warn?C.warn:C.grn;}say(msg,warn?C.warn:C.grn);};
 
   function build(){try{
     if(document.getElementById('ldc-root')||!document.body)return;
+    if(panelAbort)panelAbort.abort();panelAbort=new AbortController();tabButtons={};switches={};nativeSwitches={};if(termTimer){clearInterval(termTimer);termTimer=null;}
     if(get('firstRunDone','0')!=='1')activeTab='privacy';
     var root=mk('div',{});root.id='ldc-root';
     // Ergonomik launcher: koyu cam kapsül = [ sürükleme tutamağı | dişli ].
@@ -1241,41 +1154,43 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     grip.title='Sürükle';
     grip.innerHTML='<svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></g></svg>';
     hover(grip,'transparent','rgba(255,255,255,.07)');
-    var gbtn=mk('div',{width:'38px',height:'38px',borderRadius:'50%',background:C.acc,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flex:'0 0 auto',transition:'background .15s,transform .15s'});
-    gbtn.title='idgafcord ayarları';gbtn.innerHTML=GEAR;
+    var gbtn=mk('button',{border:'none',padding:'0',width:'38px',height:'38px',borderRadius:'50%',background:C.acc,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flex:'0 0 auto',transition:'background .15s,transform .15s'});
+    gbtn.type='button';gbtn.setAttribute('aria-label',tr('idgafcord ayarları'));gbtn.title='idgafcord ayarları';gbtn.innerHTML=GEAR;
     var sv=gbtn.firstChild;if(sv&&sv.style){st(sv,{width:'22px',height:'22px',fill:'#fff'});}
     hover(gbtn,C.acc,C.accH);gbtn.onclick=openPanel;
-    gear.appendChild(grip);gear.appendChild(gbtn);
+    gear.appendChild(grip);gear.appendChild(buildAeroTools());gear.appendChild(gbtn);
     // Kayıtlı konumu geri yükle (ekran dışına taşmışsa sınırla)
     (function(){var gp=get('gearpos','');if(gp){try{var p=JSON.parse(gp);var x=Math.max(4,Math.min(window.innerWidth-72,p.x)),y=Math.max(4,Math.min(window.innerHeight-50,p.y));st(gear,{left:x+'px',top:y+'px',right:'auto',bottom:'auto'});}catch(e){}}})();
     // Sürükleme YALNIZCA tutamaktan; dişliye tık paneli açar (karışmaz).
     (function(){var drag=false,sx,sy,ox,oy;
       grip.addEventListener('mousedown',function(e){drag=true;sx=e.clientX;sy=e.clientY;var r=gear.getBoundingClientRect();ox=r.left;oy=r.top;grip.style.cursor='grabbing';e.preventDefault();});
-      document.addEventListener('mousemove',function(e){if(!drag)return;var nx=Math.max(4,Math.min(window.innerWidth-gear.offsetWidth-4,ox+(e.clientX-sx))),ny=Math.max(4,Math.min(window.innerHeight-gear.offsetHeight-4,oy+(e.clientY-sy)));st(gear,{left:nx+'px',top:ny+'px',right:'auto',bottom:'auto'});});
-      document.addEventListener('mouseup',function(){if(!drag)return;drag=false;grip.style.cursor='grab';var r=gear.getBoundingClientRect();set('gearpos',JSON.stringify({x:Math.round(r.left),y:Math.round(r.top)}));});
+      document.addEventListener('mousemove',function(e){if(!drag)return;var nx=Math.max(4,Math.min(window.innerWidth-gear.offsetWidth-4,ox+(e.clientX-sx))),ny=Math.max(4,Math.min(window.innerHeight-gear.offsetHeight-4,oy+(e.clientY-sy)));st(gear,{left:nx+'px',top:ny+'px',right:'auto',bottom:'auto'});},{signal:panelAbort.signal});
+      document.addEventListener('mouseup',function(){if(!drag)return;drag=false;grip.style.cursor='grab';var r=gear.getBoundingClientRect();set('gearpos',JSON.stringify({x:Math.round(r.left),y:Math.round(r.top)}));},{signal:panelAbort.signal});
     })();
 
-    modal=mk('div',{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',display:'none',alignItems:'center',justifyContent:'center',zIndex:'2147483001',fontFamily:"'gg sans','Segoe UI',system-ui,sans-serif"});
-    modal.id='ldc-modal';modal.addEventListener('click',function(e){if(e.target===modal)closePanel();});
-    var card=mk('div',{width:'720px',maxWidth:'calc(100vw - 32px)',maxHeight:'calc(100vh - 64px)',background:C.bg,color:C.fg,borderRadius:'14px',boxShadow:'0 12px 40px rgba(0,0,0,.55)',display:'flex',flexDirection:'column',overflow:'hidden'});
+    modal=mk('div',{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',display:'none',alignItems:'center',justifyContent:'center',zIndex:'2147483001',fontFamily:"'Segoe UI','gg sans',system-ui,sans-serif"});
+    modal.id='ldc-modal';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-label',tr('Ayarlar'));modal.addEventListener('click',function(e){if(e.target===modal)closePanel();});
+    var card=mk('div',{background:C.bg,color:C.fg,borderRadius:'14px',boxShadow:'0 12px 40px rgba(0,0,0,.55)',display:'flex',flexDirection:'column',overflow:'hidden'});
 
-    var head=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 20px',borderBottom:'1px solid '+C.line});
+    card.className='ldc-settings-card';
+    var head=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 24px',borderBottom:'1px solid '+C.line});
+    head.className='ldc-settings-head';
     var hleft=mk('div',{display:'flex',alignItems:'center',gap:'12px',minWidth:'0'});
-    var logoImg=mk('img',{width:'36px',height:'36px',borderRadius:'10px',objectFit:'cover',flex:'0 0 auto',boxShadow:'0 4px 14px rgba(0,0,0,.4)'});
+    var logoImg=mk('img',{width:'38px',height:'38px',objectFit:'contain',flex:'0 0 auto'});
     logoImg.src=get('logo','')||LDC_LOGO_DATA_URI;logoImg.alt='';logoImg.onerror=function(){logoImg.src=LDC_LOGO_DATA_URI;};
     var ht=mk('div',{minWidth:'0'});
-    ht.appendChild(mk('div',{fontSize:'18px',fontWeight:'800',color:C.hl,letterSpacing:'.2px'},'idgafcord'));
-    ht.appendChild(mk('div',{fontSize:'12px',color:C.mut,marginTop:'2px'},'Görünüm · Sistem · Gizlilik · Eklentiler'));
+    ht.appendChild(mk('div',{fontSize:'16px',fontWeight:'600',lineHeight:'20px',color:C.hl,letterSpacing:'0'},'idgafcord'));
+    ht.appendChild(mk('div',{fontSize:'11px',lineHeight:'13px',color:C.mut,marginTop:'0'},'Ayarlar'));
     hleft.appendChild(logoImg);hleft.appendChild(ht);
     // Dil anahtarı (TR / EN) — her sekmede görünür.
     var hright=mk('div',{display:'flex',alignItems:'center',gap:'10px',flex:'0 0 auto'});
     var langWrap=mk('div',{display:'inline-flex',gap:'2px',padding:'3px',background:C.field,border:'1px solid '+C.line,borderRadius:'9px'});
-    [['tr','TR'],['en','EN']].forEach(function(o){var b=mk('div',{padding:'4px 9px',borderRadius:'6px',fontSize:'12px',fontWeight:'700',cursor:'pointer',color:lang===o[0]?'#fff':C.mut,background:lang===o[0]?C.acc:'transparent',transition:'all .12s'},o[1]);b.onclick=function(){if(lang===o[0])return;setLang(o[0]);};langWrap.appendChild(b);});
-    var x=mk('div',{cursor:'pointer',color:'#b5bac1',fontSize:'24px',lineHeight:'1',padding:'2px 8px',borderRadius:'6px',flex:'0 0 auto'},'×');hover(x,'transparent','#3f4147');x.onclick=closePanel;
+    [['tr','TR'],['en','EN']].forEach(function(o){var b=mk('button',{border:'none',fontFamily:'inherit',padding:'4px 9px',borderRadius:'6px',fontSize:'12px',fontWeight:'700',cursor:'pointer',color:lang===o[0]?'#fff':C.mut,background:lang===o[0]?C.acc:'transparent',transition:'all .12s'},o[1]);b.onclick=function(){if(lang===o[0])return;setLang(o[0]);};langWrap.appendChild(b);});
+    var x=mk('button',{cursor:'pointer',border:'none',background:'transparent',color:C.mut,fontSize:'24px',lineHeight:'1',padding:'5px 8px',borderRadius:'5px',flex:'0 0 auto'},'×');x.setAttribute('aria-label',tr('Kapat'));hover(x,'transparent','#3f4147');x.onclick=closePanel;
     hright.appendChild(langWrap);hright.appendChild(x);
     head.appendChild(hleft);head.appendChild(hright);
 
-    var body=mk('div',{padding:'4px 20px 18px',overflowY:'auto'});body.id='ldc-modal-body';
+    var body=mk('div',{padding:'4px 20px 18px',overflowY:'auto'});body.id='ldc-modal-body';body.setAttribute('role','tabpanel');
     var tabs=mkTabs(body);
     body.appendChild(sec('Genel & Gizlilik'));
     if(get('firstRunDone','0')!=='1'){
@@ -1284,9 +1199,9 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
       welcome.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',lineHeight:'1.45',marginTop:'4px'},'Başlangıç ayarlarını hızlıca seç. Sonradan hepsi değiştirilebilir.'));
       var wb=mk('div',{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'10px'});
       var w1=mkBtn('Dengeli',true),w2=mkBtn('Yayın',false),w3=mkBtn('Gizlilik',false);
-      w1.onclick=function(){nativeCmd('profile','mode','normal');set('theme','idgaf');set('firstRunDone','1');applyAll();welcome.style.display='none';say('Dengeli profil seçildi.');};
-      w2.onclick=function(){nativeCmd('profile','mode','stream');set('theme','idgaf');set('firstRunDone','1');applyAll();welcome.style.display='none';say('Yayın profili seçildi.');};
-      w3.onclick=function(){nativeCmd('profile','mode','save');set('block','1');set('upsell','1');set('firstRunDone','1');applyAll();welcome.style.display='none';say('Gizlilik profili seçildi.');};
+      w1.onclick=function(){nativeCmd('profile','mode','normal');set('firstRunDone','1');applyAll();welcome.remove();say('Dengeli profil seçildi.');};
+      w2.onclick=function(){nativeCmd('profile','mode','stream');set('firstRunDone','1');applyAll();welcome.remove();say('Yayın profili seçildi.');};
+      w3.onclick=function(){nativeCmd('profile','mode','save');set('block','1');set('upsell','1');set('firstRunDone','1');applyAll();welcome.remove();say('Gizlilik profili seçildi.');};
       wb.appendChild(w1);wb.appendChild(w2);wb.appendChild(w3);welcome.appendChild(wb);body.appendChild(welcome);
     }
     FT.forEach(function(o){
@@ -1320,10 +1235,10 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     muteRow.appendChild(muteTxt);muteRow.appendChild(muteBtns);body.appendChild(muteRow);
     var voiceSw=mkSwitch(ison('voiceMute','0'),function(v){onVoiceToggle(v);});
     switches['voiceMute']=voiceSw;
-    body.appendChild(mkRow('Sesle mikrofon komutu','Sürekli dinler; komut duyunca mikrofonu anında aç/kapatır. Sol altta canlı bir durum balonu (dinleniyor / son komut) belirir.',voiceSw));
+    body.appendChild(mkRow('Sesle mikrofon komutu','Kısa komutları cihazında tanır. Dikte servisi yok; ses bilgisayarından çıkmaz. Kapatınca mikrofon ve ses modeli kapanır.',voiceSw));
     var badgeSw=mkSwitch(ison('micBadge','1'),function(v){set('micBadge',v?'1':'0');ensureMicBadge();say('Kaydedildi.');});
     switches['micBadge']=badgeSw;
-    body.appendChild(mkRow('Mikrofon durum rozeti','Sol altta mikrofon açık/kapalı durumunu küçük rozetle gösterir.',badgeSw));
+    body.appendChild(mkRow('Mikrofon durum rozeti','Üst çubukta küçük bir ses simgesi gösterir. Ayrıntılar için üzerine gel veya tıkla.',badgeSw));
     body.appendChild(buildVoiceCard());updateVoiceStatus();
     var upRow=mk('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid '+C.line2,gap:'16px'});
     var upTxt=mk('div',{flex:'1'});upTxt.appendChild(mk('div',{fontSize:'14px',color:C.hl,fontWeight:'500'},'Güncellemeleri denetle'));
@@ -1345,8 +1260,9 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
 
     body.appendChild(sec('Tema'));
     body.appendChild(mk('div',{fontSize:'12px',color:'#b5bac1',lineHeight:'1.4',margin:'2px 0 2px'},'Renk önizlemesine dokunarak seç. Aksan rengini aşağıdan ayrıca değiştirebilirsin.'));
-    themePills=mkThemePicker(get('theme','off'),function(v){set('theme',v);applyAll();say(v==='off'?'Tema kapatıldı.':'Tema: '+v);});
+    themePills=mkThemePicker(get('theme','aeroDark'),function(v){set('theme',v);applyAll();say(v==='off'?'Tema kapatıldı.':'Tema: '+v);});
     body.appendChild(themePills);
+    ['aeroFocus','aeroEffects'].forEach(function(key){var sw=mkSwitch(ison(key,key==='aeroEffects'?'1':'0'),function(v){onToggle(key,v);});switches[key]=sw;body.appendChild(mkRow(key==='aeroFocus'?'Odak görünümü':'Cam efektleri',key==='aeroFocus'?'Üye listesini daraltır.':'Küçük kontrol yüzeylerindeki cam efektleri.',sw));});
 
     body.appendChild(sec('Aksan rengi'));
     var accWrap=mk('div',{display:'flex',alignItems:'center',gap:'10px',marginTop:'4px'});
@@ -1384,13 +1300,14 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     logoWrap.appendChild(logoInp);logoWrap.appendChild(logoFile);logoWrap.appendChild(logoApply);body.appendChild(logoWrap);
     var fontWrap=mk('div',{display:'flex',gap:'8px',marginTop:'10px'});
     fontInp=mk('input',{flex:'1',boxSizing:'border-box',background:C.field,color:C.fg,border:'1px solid '+C.line,borderRadius:'8px',padding:'9px 10px',fontSize:'12px'});
-    fontInp.type='text';fontInp.placeholder='Özel font adı (sistemde yüklü olmalı, ör. Inter)';fontInp.value=get('font','');
+    fontInp.type='text';fontInp.placeholder='Aero varsayılanı: Segoe UI · Özel font adı';fontInp.value=get('font','');
     var fontApply=mkBtn('Uygula',true);fontApply.onclick=function(){set('font',fontInp.value.trim());applyAll();say(fontInp.value.trim()?'Font uygulandı.':'Font sıfırlandı.');};
     fontWrap.appendChild(fontInp);fontWrap.appendChild(fontApply);body.appendChild(fontWrap);
     var bubbleSw=mkSwitch(ison('bubbles','0'),function(v){set('bubbles',v?'1':'0');applyAll();say('Kaydedildi.');});
     switches['bubbles']=bubbleSw;body.appendChild(mkRow('Mesaj balonları','Mesajları baloncuk (chat) stilinde gösterir.',bubbleSw));
     var memSw=mkSwitch(ison('hideMembers','0'),function(v){set('hideMembers',v?'1':'0');applyAll();say('Kaydedildi.');});
     switches['hideMembers']=memSw;body.appendChild(mkRow('Üye listesini gizle','Sağdaki üye listesini kapatır (daha çok yer).',memSw));
+    [['Events','Etkinlikleri gizle','hideServerEvents'],['Members','Üyeler kısayolunu gizle','hideServerMembers'],['Server Boosts','Sunucu takviyelerini gizle','hideServerBoosts']].forEach(function(o){var sw=mkSwitch(ison(o[2],'0'),function(v){set(o[2],v?'1':'0');applyAll();say('Kaydedildi.');});switches[o[2]]=sw;body.appendChild(mkRow(o[1],o[0],sw));});
 
     body.appendChild(sec('Yıldızlar'));
     var starSw=mkSwitch(ison('stars','0'),function(v){set('stars',v?'1':'0');applyAll();say('Kaydedildi.');});
@@ -1460,25 +1377,33 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     }
     renderPluginList();
 
+    body.appendChild(sec('Kullanıcı kartım'));body.appendChild(buildCardEditor());
     body.appendChild(note);
-    statusEl=mk('div',{minHeight:'18px',marginTop:'10px',fontSize:'12px',color:C.grn});body.appendChild(statusEl);
+    statusEl=mk('div',{flex:'1',minWidth:'0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontSize:'12px',color:C.grn});statusEl.setAttribute('role','status');
 
     footEl=mk('div',{padding:'12px 20px',borderTop:'1px solid '+C.line,fontSize:'12px',color:C.mut,display:'flex',justifyContent:'space-between'});
-    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.appendChild(mk('span',{},'v0.1.20'));footEl.appendChild(fb);
+    var fb=mk('span',{},'0 istek engellendi');footEl._b=fb;footEl.className='ldc-settings-foot';footEl.appendChild(mk('span',{},'v__LDC_APP_VERSION__'));footEl.appendChild(statusEl);footEl.appendChild(fb);
 
-    card.appendChild(head);card.appendChild(tabs);card.appendChild(body);card.appendChild(footEl);modal.appendChild(card);
-    root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);
+    var layout=mk('div',{});layout.className='ldc-settings-layout';layout.appendChild(tabs);layout.appendChild(body);card.appendChild(head);card.appendChild(layout);card.appendChild(footEl);modal.appendChild(card);
+    root.appendChild(gear);root.appendChild(modal);document.body.appendChild(root);syncAero();
 
     saveBtn.onclick=function(){set('css',themeEl.value);applyAll();say('Özel CSS kaydedildi ve uygulandı.');};
-    document.addEventListener('keydown',function(e){if(e.key==='Escape'&&modal&&modal.style.display==='flex')closePanel();});
+    modal.addEventListener('keydown',function(e){
+      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closePanel();return;}
+      if(e.key!=='Tab')return;
+      var list=Array.prototype.filter.call(modal.querySelectorAll('button,input,select,textarea,[tabindex]'),function(el){return !el.disabled&&el.tabIndex>=0&&el.getClientRects().length;});
+      if(!list.length)return;var first=list[0],last=list[list.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    });
     applyTabs(body);
     translateTree(root); // lang==='en' ise tüm paneli İngilizceye çevir
+  }catch(e){console.error('[idgafcord] Settings panel could not be built:',e);}}
   function refresh(){
     FT.forEach(function(o){if(switches[o.k])switches[o.k].set(ison(o.k,o.def));});
-    ['compact','stars','cssOn','bubbles','hideMembers','voiceMute','noTyping','mdPreview','ssControls','ssWatermark'].forEach(function(k){if(switches[k])switches[k].set(ison(k,'0'));});
+    ['hideServerEvents','hideServerMembers','hideServerBoosts','compact','stars','cssOn','bubbles','hideMembers','voiceMute','noTyping','mdPreview'].forEach(function(k){if(switches[k])switches[k].set(ison(k,'0'));});
     if(switches['micBadge'])switches['micBadge'].set(ison('micBadge','1'));
     if(switches['splash'])switches['splash'].set(ison('splash','1'));
-    if(themePills)themePills.set(get('theme','off'));
+    if(themePills)themePills.set(get('theme','aeroDark'));
     if(profilePills)profilePills.set(profileFromNative());
     if(radiusPills)radiusPills.set(get('radius','normal'));
     if(logoInp)logoInp.value=get('logo','');
@@ -1487,31 +1412,37 @@ const BOOTSTRAP_TEMPLATE: &str = r####"(function(){
     if(fontRange){fontRange.value=get('fontsize','16');if(fontVal)fontVal.textContent=get('fontsize','16')+'px';}
     if(bgInp)bgInp.value=get('bgimg','');
     if(themeEl)themeEl.value=get('css','');
-    if(voiceMuteInp)voiceMuteInp.value=get('voiceMutePhrase',lang==='en'?'mute':'mikrofonu kapat');
-    if(voiceUnmuteInp)voiceUnmuteInp.value=get('voiceUnmutePhrase',lang==='en'?'unmute':'mikrofonu aç');
+    if(voiceMuteInp)voiceMuteInp.value=voiceConfig().mute;
+    if(voiceUnmuteInp)voiceUnmuteInp.value=voiceConfig().unmute;
     if(footEl&&footEl._b)footEl._b.textContent=blockedCount+' istek engellendi';
     ensureMicBadge();updateVoiceStatus();
     if(modal){var b=modal.querySelector('#ldc-modal-body');if(b)applyTabs(b);}
     if(ison('noTyping','0')){if(!typingBlocked)typingBlocked=0;}
-    if(ison('ssControls','1'))updateSSBar();
     try{var pl=document.getElementById('ldc-plug-list');if(pl&&typeof renderPluginList==='function')renderPluginList();}catch(e){}
   }
-  function openPanel(){build();nativeCmd('sync');if(modal){modal.style.display='flex';refresh();renderTerm();if(termTimer)clearInterval(termTimer);termTimer=setInterval(renderTerm,1000);}}
-  function closePanel(){if(modal)modal.style.display='none';if(termTimer){clearInterval(termTimer);termTimer=null;}}
+  function openPanel(){if(cinemaActive)cinemaExit();build();syncAero();nativeCmd('sync');if(modal){var opening=modal.style.display!=='flex';if(opening)lastPanelFocus=document.activeElement;var host=discordPanelHost();if(host&&modal.parentNode!==host)host.appendChild(modal);modal.style.display='flex';refresh();renderTerm();if(termTimer)clearInterval(termTimer);termTimer=setInterval(renderTerm,1000);if(opening&&tabButtons[activeTab])tabButtons[activeTab].focus({preventScroll:true});}}
+  function closePanel(){if(modal){modal.style.display='none';var root=document.getElementById('ldc-root');if(root&&modal.parentNode!==root)root.appendChild(modal);}if(termTimer){clearInterval(termTimer);termTimer=null;}if(lastPanelFocus&&document.contains(lastPanelFocus))lastPanelFocus.focus({preventScroll:true});lastPanelFocus=null;}
   // Dili değiştir: kaynak TR panel yeniden kurulur; lang==='en' ise translateTree çevirir.
-  function setLang(v){lang=v;set('lang',v);nativeCmd('set','language',v);var r=document.getElementById('ldc-root');if(r&&r.parentNode)r.parentNode.removeChild(r);modal=null;statusEl=null;voiceStatusEl=null;build();openPanel();}
+  function setLang(v){closePanel();lang=v;ensureHeaderSettings();set('lang',v);nativeCmd('set','language',v);if(discordSettingsEntry){discordSettingsEntry.remove();discordSettingsEntry=null;scanDiscordSettings();}var r=document.getElementById('ldc-root');if(r&&r.parentNode)r.parentNode.removeChild(r);modal=null;statusEl=null;voiceStatusEl=null;build();openPanel();}
   window.__LDC_openSettings=openPanel;
+  document.addEventListener('keydown',function(e){if(e.ctrlKey&&e.shiftKey&&e.code==='Comma'){e.preventDefault();openPanel();}});
+  __LDC_SETTINGS_ENTRY_MODULE__
+  __LDC_PHOTO_TOOLS_MODULE__
+  __LDC_CINEMA_MODULE__
 
   if(document.body)build();else document.addEventListener('DOMContentLoaded',build);
-  if(ison('voiceMute','0'))setTimeout(startVoice,1500);
+  if(!SAFE&&ison('voiceMute','0'))setTimeout(startVoice,1500);
   setTimeout(ensureMicBadge,1200);
   // Tepsi menüsü dilini sayfadaki seçili dile eşitle (sonraki açılışta etkili olur).
   setTimeout(function(){nativeCmd('set','language',lang);},2600);
   // Hafif: yalnızca panel düğmesi kaybolduysa yeniden ekle. CSS'ler adopted
   // sheet olarak kalıcıdır; sürekli yeniden uygulamak gereksiz CPU harcar.
   setInterval(function(){if(document.body&&!document.getElementById('ldc-root'))build();},5000);
-  setInterval(updateMicBadge,2500);
+  setInterval(function(){ensureMicBadge();updateMicBadge();},2500);
   setTimeout(function(){loadPlugins();},5000);
+  }
+  if(document.documentElement)initUI();
+  else{var ready=new MutationObserver(function(){if(document.documentElement){ready.disconnect();initUI();}});ready.observe(document,{childList:true});}
 })();"####;
 
 const MUTE_TOGGLE_SCRIPT: &str = r#"
@@ -1524,6 +1455,7 @@ const MUTE_TOGGLE_SCRIPT: &str = r#"
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(
@@ -1539,16 +1471,22 @@ pub fn run() {
         )
         .setup(|app| {
             let handle = app.handle().clone();
+            if let Some(root) = config_dir(&handle) {
+                app.manage(voice::VoiceManager::new(handle.clone(), root.join("voice")));
+            }
             let mut settings = load_settings(&handle);
 
             // Otomatik başlatmayı kayıtlı ayara göre senkronize et.
             let autostart = app.autolaunch();
+            let portable = env::current_exe().ok().and_then(|p| p.parent().map(|p| p.join("portable.flag").exists())).unwrap_or(false);
+            if !cfg!(debug_assertions) && !portable {
             if settings.autostart {
                 let _ = autostart.enable();
             } else {
                 let _ = autostart.disable();
             }
             settings.autostart = autostart.is_enabled().unwrap_or(settings.autostart);
+            }
 
             // ---- Tepsi menüsü ve Discord içi ayar paneli aynı native ayarları kullanır. ----
             // Menü başlığı: uygulama logosu + adı (pencere ikonuyla aynı görsel).
@@ -1618,6 +1556,7 @@ pub fn run() {
             let stream_performance = settings.stream_performance;
             let start_minimized = settings.start_minimized;
             let mute_shortcut = settings.mute_shortcut.clone();
+            let appearance = settings.appearance.clone();
 
             app.manage(Mutex::new(settings));
 
@@ -1630,14 +1569,22 @@ pub fn run() {
             let mut builder = WebviewWindowBuilder::new(
                 app,
                 "main",
-                WebviewUrl::External("https://discord.com/app".parse().unwrap()),
+                WebviewUrl::App("index.html".into()),
             )
             .title("idgafcord")
             .inner_size(1280.0, 800.0)
             .min_inner_size(800.0, 600.0)
             .center()
+            .background_color(appearance.color())
+            .theme(Some(appearance.theme()))
+            .initialization_script(format!("window.__LDC_STARTUP__={};",serde_json::to_string(&appearance)?))
             .initialization_script(&bootstrap)
             .on_page_load(move |window, payload| {
+                if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                    #[cfg(windows)]
+                    permissions::cancel(window.app_handle());
+                    if let Some(manager) = window.app_handle().try_state::<voice::VoiceManager>() { let _ = manager.send(voice::Request::Stop); }
+                }
                 if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                     let _ = window.eval(&bootstrap_for_load);
                     sync_native_settings(window.app_handle());
@@ -1645,7 +1592,9 @@ pub fn run() {
             })
             .on_navigation(move |url| {
                 if url.scheme() != "idgafcord" || url.host_str() != Some("native") {
-                    return true;
+                    if url.as_str() == "about:blank" || url.scheme()=="tauri" || (url.scheme()=="http" && url.host_str()==Some("tauri.localhost")) || (url.scheme() == "https" && url.host_str() == Some("discord.com")) { return true; }
+                    if matches!(url.scheme(), "https" | "http" | "mailto") { let _ = nav_handle.opener().open_url(url.as_str(), None::<&str>); }
+                    return false;
                 }
 
                 let mut action = String::new();
@@ -1661,6 +1610,43 @@ pub fn run() {
                 }
 
                 match action.as_str() {
+                    "set_ecosystem" => {
+                        if let Ok(config)=serde_json::from_str::<serde_json::Value>(&value) {
+                            if let Some(origin)=config.get("url").and_then(|value|value.as_str()).and_then(ecosystem::endpoint) {
+                                if let Some(state)=nav_handle.try_state::<Mutex<Settings>>() {if let Ok(mut settings)=state.lock(){settings.ecosystem_enabled=!origin.is_empty()&&config.get("enabled").and_then(|value|value.as_bool()).unwrap_or(false);settings.ecosystem_url=origin;save_settings(&nav_handle,&settings);}}
+                                sync_native_settings(&nav_handle);panel_notice(&nav_handle,"Ekosistem bağlantı ayarı kaydedildi.",false);
+                            } else {panel_notice(&nav_handle,"Geçerli bir HTTPS workers.dev adresi gir.",true);}
+                        }
+                    }
+                    "ecosystem_lookup" => ecosystem::lookup(&nav_handle,key.clone(),value.clone()),
+                    "download_image" => downloads::start(&nav_handle,key.clone(),value.clone()),
+                    "reset_device_permissions" => {
+                        #[cfg(windows)]
+                        if let Some(window)=nav_handle.get_webview_window("main"){permissions::reset(&window);}
+                    }
+                    "appearance" => {
+                        if let Ok(appearance)=serde_json::from_str::<appearance::Appearance>(&value) {
+                            if appearance.valid() {
+                                if let Some(window)=nav_handle.get_webview_window("main") { appearance.apply(&window); }
+                                if let Some(state)=nav_handle.try_state::<Mutex<Settings>>() {
+                                    if let Ok(mut s)=state.lock() { if s.appearance!=appearance {s.appearance=appearance;save_settings(&nav_handle,&s);} }
+                                }
+                            }
+                        }
+                    }
+                    "voice_start" => {
+                        if let (Some(manager), Ok(config)) = (nav_handle.try_state::<voice::VoiceManager>(), serde_json::from_str::<voice::Config>(&value)) {
+                            if let Err(e) = manager.send(voice::Request::Start { session: key.clone(), config }) { panel_notice(&nav_handle, &e, true); }
+                        }
+                    }
+                    "voice_stop" => {
+                        if let Some(manager) = nav_handle.try_state::<voice::VoiceManager>() { let _ = manager.send(voice::Request::Stop); }
+                    }
+                    "voice_install" => {
+                        if let Some(manager) = nav_handle.try_state::<voice::VoiceManager>() {
+                            if let Err(e) = manager.send(voice::Request::Install { session: key.clone(), language: value.clone() }) { panel_notice(&nav_handle, &e, true); }
+                        }
+                    }
                     "sync" => sync_native_settings(&nav_handle),
                     "check_update" => spawn_update_check(nav_handle.clone(), false),
                     "set" => {
@@ -1780,7 +1766,7 @@ pub fn run() {
                         };
                         let warn = if saved { "false" } else { "true" };
                         if let Some(window) = nav_handle.get_webview_window("main") {
-                            let _ = window.eval(&format!(
+                            let _ = window.eval(format!(
                                 "window.__LDC_nativeNotice&&window.__LDC_nativeNotice({msg},{warn});"
                             ));
                         }
@@ -1802,10 +1788,18 @@ pub fn run() {
                     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --autoplay-policy=no-user-gesture-required",
                 );
             }
+            // Development and portable builds must not share installed Discord sessions.
+            if let Some(root) = config_dir(&handle) {
+                let portable = env::current_exe().ok().and_then(|p| p.parent().map(|p| p.join("portable.flag").exists())).unwrap_or(false);
+                if cfg!(debug_assertions) || portable { builder = builder.data_directory(root.join("webview")); }
+            }
             if start_minimized {
                 builder = builder.visible(false);
             }
             let _window = builder.build()?;
+            appearance.apply(&_window);
+            #[cfg(windows)]
+            permissions::install(&_window);
 
             if !register_mute_shortcut(&handle, &mute_shortcut) {
                 let fallback = default_mute_shortcut();
@@ -1826,7 +1820,7 @@ pub fn run() {
 
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Lightweight Discord")
+                .tooltip("idgafcord")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| {
@@ -1853,6 +1847,7 @@ pub fn run() {
                             s.autostart = !s.autostart;
                             let mgr = app.autolaunch();
                             if s.autostart { let _ = mgr.enable(); } else { let _ = mgr.disable(); }
+                            s.autostart = mgr.is_enabled().unwrap_or(!s.autostart);
                             let _ = c_autostart.set_checked(s.autostart);
                             save_settings(app, &s);
                             drop(s);
@@ -1918,9 +1913,8 @@ pub fn run() {
                             }
                         }
                         "repair" => {
-                            // Beyaz/siyah ekran yapabilecek HER ŞEYİ güvenli hâle getir:
-                            // native (GPU/oyun modu) + sayfa (tema/splash/özel CSS/arka plan),
-                            // sonra temiz yeniden başlat.
+                            // Reload in safe mode without deleting the user's theme/CSS.
+                            // Reset native rendering flags for the next application launch.
                             {
                                 let mut s = state.lock().unwrap();
                                 s.stream_performance = false;
@@ -1934,13 +1928,8 @@ pub fn run() {
                             if let Some(w) = app.get_webview_window("main") {
                                 let _ = w.show();
                                 let _ = w.set_focus();
-                                let _ = w.eval("try{localStorage.setItem('ldc_theme','off');localStorage.setItem('ldc_splash','0');localStorage.setItem('ldc_cssOn','0');localStorage.setItem('ldc_bgimg','');localStorage.removeItem('ldc_css');sessionStorage.removeItem('ldc_safe');}catch(e){}");
+                                let _ = w.eval("try{sessionStorage.setItem('ldc_safe','1');sessionStorage.setItem('ldc_safe_reason','manual');}catch(e){}location.reload();");
                             }
-                            let app2 = app.clone();
-                            std::thread::spawn(move || {
-                                std::thread::sleep(Duration::from_millis(500));
-                                app2.restart();
-                            });
                         }
                         "check_update" => {
                             spawn_update_check(app.clone(), false);
@@ -1976,6 +1965,8 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                #[cfg(windows)]
+                permissions::cancel(window.app_handle());
                 let app = window.app_handle();
                 let (minimize, game) = app
                     .try_state::<Mutex<Settings>>()
